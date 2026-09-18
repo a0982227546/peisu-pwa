@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>裴溯語意理解｜GPT-5 nano 獨立測試</title>
+<style>
+body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;max-width:720px;margin:0 auto;padding:20px;background:#f6f7f9;color:#202124}h1{font-size:22px;margin:6px 0}.sub{color:#666;font-size:14px;margin-bottom:18px}.card{background:#fff;border:1px solid #ddd;border-radius:14px;padding:16px;box-shadow:0 2px 8px #0000000a}textarea{width:100%;box-sizing:border-box;min-height:130px;border:1px solid #bbb;border-radius:10px;padding:12px;font-size:16px;resize:vertical}button{width:100%;margin-top:12px;border:0;border-radius:10px;padding:13px;font-size:16px;font-weight:700;background:#111;color:#fff}button:disabled{opacity:.5}.status{margin:14px 0 8px;font-size:14px;color:#555}pre{white-space:pre-wrap;word-break:break-word;background:#f3f4f6;border-radius:10px;padding:12px;min-height:70px;font-size:13px;line-height:1.5}.note{font-size:13px;color:#777;margin-top:12px}</style>
+</head>
+<body>
+<h1>GPT-5 nano｜語意理解獨立測試</h1>
+<div class="sub">只連到 nano 測試 Worker，不會改動原本的裴溯 PWA 或 GPT-5 Worker。</div>
+<div class="card">
+<label for="conversation"><b>測試對話</b></label>
+<textarea id="conversation" placeholder="例如：我今天有點累，但還不想睡。"></textarea>
+<button id="send">送去 GPT-5 nano 理解</button>
+<div class="status" id="status">尚未送出</div>
+<pre id="result">結果會顯示在這裡。</pre>
+<div class="note">每按一次送出，會產生一次 OpenAI API 請求與相應用量。</div>
+</div>
+<script>
+const ENDPOINT='https://peisu-semantic-nano-test.a0982227546.workers.dev';
+const send=document.getElementById('send'), input=document.getElementById('conversation'), statusEl=document.getElementById('status'), result=document.getElementById('result');
+send.addEventListener('click',async()=>{
+ const conversation=input.value.trim();
+ if(!conversation){statusEl.textContent='請先輸入測試對話。';return;}
+ send.disabled=true; statusEl.textContent='正在送往 nano 測試 Worker…'; result.textContent='';
+ try{
+  const r=await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversation})});
+  const text=await r.text();
+  let shown=text;
+  try{shown=JSON.stringify(JSON.parse(text),null,2)}catch{}
+  result.textContent=shown;
+  statusEl.textContent=r.ok?'成功收到結果。':`請求失敗（HTTP ${r.status}）。`;
+ }catch(e){statusEl.textContent='連線失敗。';result.textContent=String(e?.message||e)}
+ finally{send.disabled=false;}
+});
+</script>
+</body>
+</html>
