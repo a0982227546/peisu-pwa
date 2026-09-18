@@ -26,7 +26,7 @@ const schema = {
       type:"object", additionalProperties:false,
       properties:{
         current_topic:{type:["string","null"]},
-        open_task:{type:["object","null"],additionalProperties:true},
+        open_task:{type:["object","null"],properties:{},additionalProperties:false},
         interaction_state:{type:"string",enum:["ordinary","light","teasing","serious","probe","conflict","info_defense","intimate","practical","danger","vulnerable"]},
         decision_owner:{type:["string","null"],enum:["user","pei","shared","undecided",null]},
         obligations:{type:"array",items:{type:"string"}}
