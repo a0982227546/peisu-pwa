@@ -1,0 +1,6 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "peisu-semantic-v07",
+  "main": "pei_su_semantic_worker_v0_7.js",
+  "compatibility_date": "2026-09-18"
+}
