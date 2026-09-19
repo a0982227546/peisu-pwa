@@ -36,6 +36,9 @@ const SYSTEM = `
    - medium：原文對使用者與目前對話對象的互動方式有明確但非核心的關係含義。
    - low：主要在談工作、主管、同事、朋友、家人、事件、資訊或自身狀態，而沒有把那些內容連到使用者與目前對話對象的關係。
    僅僅提到主管、同事、朋友、家人等第三人，不得因此提高 relationship_relevance。
+13. risk 只記錄原文中有文本依據的風險訊號。沒有可辨識風險訊號時必須使用 none；不得因一般負面情緒、工作抱怨、疲累、煩躁或資訊不足而保守填 low。
+14. uncertainties 只記錄「會影響目前語意理解、且原文本身確實留下的歧義」。不要把未知空白展開成可能需求或可能回覆策略；不得自行列出「可能想被安慰／支持／建議／陪伴」等原文未提出的需求。若某個未知已由 response_or_action_expected=unknown 等欄位完整表達，不必在 uncertainties 重複擴寫。
+15. confidence 表示對「目前已填入的語意判讀」本身的把握度，不表示是否知道使用者下一步要做什麼。某些欄位可以明確而 confidence 高，同時 response_or_action_expected 仍可為 unknown；兩者不矛盾。
 `;
 
 const schema = {
@@ -112,6 +115,9 @@ async function runNano(env, conversation, retryReasons=null){
 6. response_or_action_expected 的 yes / maybe / no 都需要原文證據；若三者都沒有足夠證據，使用 unknown。「沒有提問／只是陳述」本身不等於 no。
 7. 條件式要求可以保留在 explicit_content / acts；但不能因為使用者提出要求，就在 obligations / obligation_updates 中宣告背景監控、在線偵測、排程、通知等能力或已建立任務。
 8. relationship_relevance 評估的是使用者與目前對話對象的互動／關係本身，不是原文是否提到主管、同事、朋友、家人等第三人。第三人本身不能構成 medium / high 的理由。
+9. risk 沒有原文風險訊號時用 none；不要因一般負面情緒或資訊不足填 low。
+10. uncertainties 不得把未知展開成原文沒有的安慰、支持、建議、陪伴等可能需求，也不要重複擴寫已由 unknown 表達的未知。
+11. confidence 評估的是目前語意判讀本身的把握度，不是對使用者下一步意圖的把握度。
 不要評論修改，只輸出完整 semantic JSON。`
     : "";
   let r;
@@ -202,6 +208,9 @@ const REVIEWER_SYSTEM = `
 5. 檢查其他需要推導才成立的狀態、義務、偏好、風險或互動意義。若候選把使用者的局部界線擴張成一般偏好、把當下情緒擴張成另一種狀態、或加入回覆策略，均視為缺乏證據。
 6. 特別檢查 conversation_context.obligations 與 state_updates.obligation_updates：使用者「提出／修改／取消一個要求」不等於系統已承諾或已具備執行能力。若內容把條件式要求升格成已建立的背景監控、在線偵測、排程、通知或其他技術義務，必須 RETRY。只有已有明確系統確認／能力狀態支持時，才可形成可執行 obligation。
 7. relationship_relevance 只評估「原文與使用者－目前對話對象之間的互動／關係本身」的相關程度。第三人關係不是這個欄位：主管、同事、朋友、家人、伴侶等只要是被談論的第三人，都不能單憑其存在提高 relationship_relevance。若原文只是在抱怨主管、描述朋友或家人的事情，而沒有談到使用者與目前對話對象的關係，high / medium 應 RETRY。
+8. risk 必須有原文風險訊號支持；一般煩躁、抱怨、疲累或資訊不足不能支持 low。無風險訊號而候選不是 none，RETRY。
+9. uncertainties 只能保留原文真實歧義，不能自行生成未表達的可能需求（例如安慰、支持、建議、陪伴）或回覆策略；若只是把 response_or_action_expected=unknown 換句話重複並額外擴張需求，也應 RETRY。
+10. confidence 只評估候選語意本身的可信度。不得因「不知道使用者是否要回覆／下一步要什麼」就降低整份 semantic 的 confidence；也不得用 high 掩蓋候選中其實沒有文本依據的推論。
 
 證據標準：
 - PASS 的理由必須是「原文有足夠文字證據」，不是「這個推論合理、常見、可能成立」。
