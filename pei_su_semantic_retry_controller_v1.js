@@ -25,6 +25,11 @@ const SYSTEM = `
 7. uncertainties 只描述語意上的不確定，不提供回覆策略。
 8. user_state_or_attitude 不要填 neutral，也不要把事件/動作當態度。
 9. 只做最少必要推論。
+10. response_or_action_expected：
+   - yes = 原文明確要求或明確期待回應／行動。
+   - no = 原文明確表示不需要、不希望或拒絕任何回應／行動。
+   - maybe = 原文有支持「可能期待互動」的訊號，但仍不能確定。
+   - unknown = 原文不足以判斷是否期待回應／行動。不要因為「沒有提問／只是陳述」就填 no。
 `;
 
 const schema = {
@@ -51,7 +56,7 @@ const schema = {
         user_state_or_attitude:{type:"array",items:{type:"string"}},
         relationship_relevance:{type:"string",enum:["low","medium","high"]},
         risk:{type:"string",enum:["none","low","medium","high","urgent"]},
-        response_or_action_expected:{type:"string",enum:["no","maybe","yes"]},
+        response_or_action_expected:{type:"string",enum:["no","maybe","yes","unknown"]},
         confidence:{type:"string",enum:["low","medium","high"]},
         uncertainties:{type:"array",items:{type:"string"}}
       },required:["acts","continuation_of_previous","repairs_or_reframes_previous","explicit_content","implied_content","user_state_or_attitude","relationship_relevance","risk","response_or_action_expected","confidence","uncertainties"]
@@ -98,7 +103,7 @@ async function runNano(env, conversation, retryReasons=null){
 3. 有充分證據的理解必須保留；不要因為被退回就把所有內容改成 unknown、none 或空陣列。
 4. 原文只能支持較窄意思時，只保留較窄意思。
 5. 不加入裴溯應如何回覆的策略，不推斷未明說的個人資料。
-6. response_or_action_expected 的 yes / maybe / no 都需要原文證據；「沒有提問／只是陳述」本身不等於 no。
+6. response_or_action_expected 的 yes / maybe / no 都需要原文證據；若三者都沒有足夠證據，使用 unknown。「沒有提問／只是陳述」本身不等於 no。
 不要評論修改，只輸出完整 semantic JSON。`
     : "";
   let r;
@@ -180,11 +185,12 @@ const REVIEWER_SYSTEM = `
 1. 逐項檢查 implied_content 的每一項。
 2. 逐項檢查 user_state_or_attitude 的每一項。
 3. 檢查 relationship_relevance；medium/high 必須有原文明確顯示關係層面的內容，不能只因為語氣強烈、抱怨、拒絕安慰或質疑回覆就提高。
-4. 檢查 response_or_action_expected 的每一種值（yes / maybe / no）。三種都必須有原文證據：
+4. 檢查 response_or_action_expected：
    - yes：原文明確要求或明確期待回應／行動。
    - no：原文明確表示不需要、不希望或拒絕任何回應／行動；「沒有提問」「只是陳述」「沒有明說要回覆」都不能推出 no。
    - maybe：原文存在可支持「可能期待互動但不確定」的訊號。
-   若原文不足以支持候選值，必須 RETRY；不可因欄位只能三選一就替使用者猜。
+   - unknown：原文不足以判斷是否期待回應／行動時使用；這不是錯誤，也不需要硬找期待或拒絕的證據。
+   若候選為 yes / maybe / no 而原文不足以支持該值，必須 RETRY，應讓重新判讀有機會改為 unknown；不可替使用者猜。
 5. 檢查其他需要推導才成立的狀態、義務、偏好、風險或互動意義。若候選把使用者的局部界線擴張成一般偏好、把當下情緒擴張成另一種狀態、或加入回覆策略，均視為缺乏證據。
 
 證據標準：
@@ -215,7 +221,7 @@ function needsSemanticReview(semantic){
   if(mu.relationship_relevance==="medium" || mu.relationship_relevance==="high") return true;
 
   // yes / maybe / no are all semantic judgments and all require evidence review.
-  if(["yes","maybe","no"].includes(mu.response_or_action_expected)) return true;
+  if(["yes","maybe","no","unknown"].includes(mu.response_or_action_expected)) return true;
 
   return false;
 }
