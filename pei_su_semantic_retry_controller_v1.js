@@ -122,7 +122,7 @@ async function runNano(env, conversation, retryReasons=null){
   }
 }
 
-async function validate(env, semantic){
+async function validate(env, conversation, semantic){
   if(!env.VALIDATOR || typeof env.VALIDATOR.fetch!=="function") {
     throw diagnosticError("VALIDATOR_BINDING", "VALIDATOR Service Binding is missing");
   }
@@ -131,7 +131,7 @@ async function validate(env, semantic){
     r=await env.VALIDATOR.fetch("https://validator.internal/",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(semantic)
+      body:JSON.stringify({conversation, semantic})
     });
   } catch(e) {
     throw diagnosticError("VALIDATOR_FETCH", String(e?.message||e), {transport:"service_binding"});
