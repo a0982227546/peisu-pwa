@@ -303,6 +303,7 @@ export default {
             status:"validation_failed",
             attempts:2,
             api_calls:2,
+            reviewer_used:false,
             reasons:secondValidation.reasons||[],
             debug:{
               original_conversation:conversation,
@@ -314,12 +315,58 @@ export default {
           },{status:422,headers:cors});
         }
 
+        const secondClean=secondValidation.semantic;
+
+        // After a mechanical-validator retry, the regenerated semantic must still
+        // pass the same semantic-fidelity gate. This is API call #3 at most.
+        if(needsSemanticReview(secondClean)){
+          const secondReview=await reviewSemantic(env,conversation,secondClean); // API call #3
+
+          if(secondReview.status==="RETRY"){
+            return Response.json({
+              status:"validation_failed",
+              attempts:2,
+              api_calls:3,
+              reviewer_used:true,
+              fidelity_review:"SECOND_RETRY_BLOCKED",
+              reasons:reviewerReasons(secondReview),
+              debug:{
+                original_conversation:conversation,
+                first_semantic:firstSemantic,
+                first_validation:firstValidation,
+                second_semantic:secondSemantic,
+                second_validation:secondValidation,
+                second_review:secondReview
+              }
+            },{status:422,headers:cors});
+          }
+
+          return Response.json({
+            status:"completed",
+            attempts:2,
+            api_calls:3,
+            reviewer_used:true,
+            fidelity_review:"SECOND_PASS",
+            final_validation:secondValidation.status,
+            semantic:secondClean,
+            debug:{
+              original_conversation:conversation,
+              first_semantic:firstSemantic,
+              first_validation:firstValidation,
+              second_semantic:secondSemantic,
+              second_validation:secondValidation,
+              second_review:secondReview
+            }
+          },{headers:cors});
+        }
+
         return Response.json({
           status:"completed",
           attempts:2,
           api_calls:2,
+          reviewer_used:false,
           final_validation:secondValidation.status,
-          semantic:secondValidation.semantic,
+          semantic:secondClean,
           debug:{
             original_conversation:conversation,
             first_semantic:firstSemantic,
