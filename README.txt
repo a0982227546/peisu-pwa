@@ -11,3 +11,4 @@
 API Key 只放 Cloudflare Secret，不放 GitHub / HTML。
 
 這不是最終完整角色聊天版；目前先完成「真正 AI 理解」這一層的可部署測試。
+Retry Worker Service Binding deployment trigger.
