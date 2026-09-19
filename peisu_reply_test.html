@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>裴溯｜回覆層 v1 獨立測試</title>
+<style>
+body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;margin:0;background:#f5f5f5;color:#222}
+main{max-width:760px;margin:auto;padding:18px}
+h1{font-size:22px}
+p{line-height:1.6}
+textarea,input,button,pre{box-sizing:border-box;width:100%;font:inherit}
+textarea{min-height:150px;padding:12px;border:1px solid #bbb;border-radius:10px;background:white}
+input{padding:10px;border:1px solid #bbb;border-radius:10px;background:white}
+button{margin-top:12px;padding:12px;border:0;border-radius:10px;background:#222;color:white;font-weight:700}
+pre{white-space:pre-wrap;word-break:break-word;background:white;border:1px solid #ddd;border-radius:10px;padding:12px;min-height:90px}
+.small{font-size:13px;color:#666}
+</style>
+</head>
+<body><main>
+<h1>裴溯｜回覆層 v1 獨立測試</h1>
+<p>這頁不改正式聊天室。它先呼叫目前的 semantic RETRY Worker，成功後再把最終 semantic 送進裴溯回覆 Worker。</p>
+
+<label>原始對話</label>
+<textarea id="conversation">我：今天工作真的很煩
+我：算了，你不用安慰我
+我：反正你大概也不知道要說什麼</textarea>
+
+<p class="small">Semantic endpoint</p>
+<input id="semanticUrl" value="https://peisu-semantic-retry-v1.a0982227546.workers.dev">
+
+<p class="small">Reply endpoint</p>
+<input id="replyUrl" value="https://peisu-reply-v1.a0982227546.workers.dev">
+
+<button id="run">開始測試</button>
+<p id="state" class="small"></p>
+
+<h2>裴溯實際回覆</h2>
+<pre id="reply">尚未測試</pre>
+
+<h2>完整結果</h2>
+<pre id="debug">尚未測試</pre>
+
+<script>
+const $=id=>document.getElementById(id);
+$("run").onclick=async()=>{
+  $("run").disabled=true;
+  $("state").textContent="正在取得 semantic…";
+  $("reply").textContent="等待中…";
+  $("debug").textContent="等待中…";
+  try{
+    const conversation=$("conversation").value.trim();
+
+    const sr=await fetch($("semanticUrl").value.trim(),{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({conversation})
+    });
+    const semanticResult=await sr.json();
+    if(!sr.ok || semanticResult.status!=="completed"){
+      throw new Error("Semantic 未完成："+JSON.stringify(semanticResult,null,2));
+    }
+
+    $("state").textContent="Semantic 完成，正在生成裴溯回覆…";
+    const rr=await fetch($("replyUrl").value.trim(),{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        conversation,
+        semantic:semanticResult.semantic
+      })
+    });
+    const replyResult=await rr.json();
+    if(!rr.ok) throw new Error(JSON.stringify(replyResult,null,2));
+
+    const r=replyResult.reply||{};
+    $("reply").textContent =
+      r.mode==="silent"
+      ? "【裴溯沒有發送訊息】"
+      : (r.text || "【空白回覆】");
+
+    $("debug").textContent=JSON.stringify({
+      semantic_pipeline:{
+        status:semanticResult.status,
+        attempts:semanticResult.attempts,
+        api_calls:semanticResult.api_calls,
+        reviewer_used:semanticResult.reviewer_used,
+        fidelity_review:semanticResult.fidelity_review,
+        final_validation:semanticResult.final_validation,
+        semantic:semanticResult.semantic
+      },
+      reply_layer:replyResult
+    },null,2);
+    $("state").textContent="完成";
+  }catch(e){
+    $("state").textContent="測試失敗";
+    $("reply").textContent=String(e.message||e);
+    $("debug").textContent=String(e.stack||e);
+  }finally{
+    $("run").disabled=false;
+  }
+};
+</script>
+</main></body>
+</html>
