@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>裴溯一次 RETRY 控制器測試</title>
+<style>body{font-family:system-ui,sans-serif;max-width:760px;margin:auto;padding:18px;background:#f6f7f9} .c{background:#fff;padding:15px;border-radius:14px;margin:12px 0}textarea{width:100%;box-sizing:border-box;min-height:180px;padding:10px}button{width:100%;padding:13px;font-size:16px}pre{white-space:pre-wrap;word-break:break-word;background:#f1f3f5;padding:12px;border-radius:10px}</style></head>
+<body><h2>裴溯｜一次 RETRY 控制器測試</h2>
+<div class="c"><textarea id="c" placeholder="貼上原始連續對話"></textarea><button id="go">開始測試</button></div>
+<div class="c"><pre id="o">尚未測試</pre></div>
+<script>
+const ENDPOINT="https://peisu-semantic-retry-v1.a0982227546.workers.dev";
+go.onclick=async()=>{try{o.textContent="處理中…";const r=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({conversation:c.value})});const t=await r.text();try{o.textContent=JSON.stringify(JSON.parse(t),null,2)}catch{o.textContent=t}}catch(e){o.textContent="錯誤："+e.message}}
+</script></body></html>
