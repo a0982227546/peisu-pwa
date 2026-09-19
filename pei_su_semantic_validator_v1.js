@@ -1,6 +1,8 @@
-// Pei Su 語意驗證器 v1 — 獨立測試（CORS 修正版）
+// Pei Su 語意驗證器 v1.1 — 獨立測試（CORS 修正版）
 // 輸入：nano r4 語意 JSON。輸出：PASS / FIX / RETRY。
 // 不呼叫 AI；不重解讀使用者；不決定裴溯回覆。
+// v1.1：補強回覆策略清理，套用到 conversation_context.obligations
+//       與 state_updates.obligation_updates；保留純邊界/義務內容。
 
 const clone = x => JSON.parse(JSON.stringify(x));
 const arr = x => Array.isArray(x) ? x : [];
@@ -11,7 +13,13 @@ const replyStrategy = [
   /中性.*(聆聽|回應)/,
   /提供.*(空間|支持)/,
   /回應.*(語氣|風格)/,
-  /如何回(應|覆)/
+  /如何回(應|覆)/,
+  /prioriti[sz]e.*(listen|聆聽|確認|情緒)/i,
+  /優先.*(聆聽|確認|安慰|回應)/,
+  /聆聽.*(確認|情緒狀態)/,
+  /如有需求.*(提供|討論|回應)/,
+  /再提供.*(資訊|建議|策略|討論)/,
+  /提供.*(實務資訊|工作.*資訊|建議|策略)/
 ];
 const tech = [
   /monitor/i, /detect/i,
@@ -27,6 +35,15 @@ function nearDup(a,b){
   return (a.includes(b)||b.includes(a)) && Math.abs(a.length-b.length)<=6;
 }
 function matchesAny(s, regs){ return regs.some(r=>r.test(String(s))); }
+
+function cleanStrategyList(list, label, fixes){
+  const old=arr(list);
+  const kept=old.filter(v=>!matchesAny(v,replyStrategy)&&!matchesAny(v,tech));
+  if(kept.length!==old.length){
+    fixes.push(`移除 ${label} 中不屬於語意層的回覆策略或技術能力文字`);
+  }
+  return kept;
+}
 
 function validate(input){
   const x=clone(input);
@@ -50,17 +67,19 @@ function validate(input){
     fixes.push("移除與 explicit_content 明確重複的 implied_content");
   }
 
-  // FIX：孤立的回覆策略／技術能力文字，只能從 implied/uncertainties 刪除
+  // FIX：孤立的回覆策略／技術能力文字。
+  // 只做可機械判定的刪除，不改寫語意值。
   for(const key of ["implied_content","uncertainties"]){
-    const old=arr(mu[key]);
-    const kept=old.filter(v=>!matchesAny(v,replyStrategy)&&!matchesAny(v,tech));
-    if(kept.length!==old.length){
-      mu[key]=kept;
-      fixes.push(`移除 ${key} 中不屬於語意層的回覆策略或技術能力文字`);
-    }
+    mu[key]=cleanStrategyList(mu[key], key, fixes);
   }
+  cc.obligations=cleanStrategyList(cc.obligations, "conversation_context.obligations", fixes);
+  su.obligation_updates=cleanStrategyList(
+    su.obligation_updates,
+    "state_updates.obligation_updates",
+    fixes
+  );
 
-  // RETRY：監控/技術能力已污染 obligations
+  // RETRY：清理後仍有監控/技術能力污染 obligations
   const obligations=[...arr(cc.obligations),...arr(su.obligation_updates)];
   if(obligations.some(v=>matchesAny(v,tech)||/monitor_online|detect_online|status_detection/i.test(String(v)))){
     reasons.push("技術能力或在線監控被寫入 obligations/state_updates，需要 nano 重新判讀");
