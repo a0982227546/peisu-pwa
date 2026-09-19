@@ -45,7 +45,7 @@ function cleanStrategyList(list, label, fixes){
   return kept;
 }
 
-function validate(input){
+function validate(input, conversation=null){
   const x=clone(input);
   const reasons=[], fixes=[];
   const mu=x.message_understanding||{};
@@ -104,6 +104,25 @@ function validate(input){
     }
   }
 
+  // RETRY：有原始對話時，檢查幾種不能靠機械 FIX 的語意擴張。
+  // 這裡只擋明確高風險案例；不自行改寫語意。
+  if(typeof conversation==="string" && conversation.trim()){
+    const source=conversation.replace(/\s+/g," ");
+    const attitudes=arr(mu.user_state_or_attitude).map(v=>String(v).toLowerCase());
+
+    // dismissive 是對使用者態度的額外評價；原文未明說時交回 nano 重判。
+    if(attitudes.includes("dismissive") &&
+       !/(不屑|輕蔑|鄙視|看不起|敷衍|dismissive)/i.test(source)){
+      reasons.push("user_state_or_attitude=dismissive 缺乏原始對話的明確文本依據，需要 nano 重新判讀");
+    }
+
+    // implied_content 新增「壓力」但原文沒有相應文字時，不由 Validator 擅自刪改，改走 RETRY。
+    if(arr(mu.implied_content).some(v=>/壓力|stress/i.test(String(v))) &&
+       !/(壓力|壓迫|stress|喘不過氣|負擔)/i.test(source)){
+      reasons.push("implied_content 加入「壓力/stress」，但原始對話未明說或提供足夠文本依據，需要 nano 重新判讀");
+    }
+  }
+
   if(reasons.length){
     return {status:"RETRY",reasons,fixes_applied:fixes,semantic:x};
   }
@@ -126,7 +145,13 @@ export default {
       return Response.json({error:"POST only"},{status:405,headers:cors});
     try{
       const body=await request.json();
-      return Response.json(validate(body),{headers:cors});
+      const hasEnvelope =
+        body && typeof body==="object" &&
+        body.semantic && typeof body.semantic==="object";
+      const semantic = hasEnvelope ? body.semantic : body;
+      const conversation =
+        hasEnvelope && typeof body.conversation==="string" ? body.conversation : null;
+      return Response.json(validate(semantic,conversation),{headers:cors});
     }catch(e){
       return Response.json({error:String(e?.message||e)},{status:400,headers:cors});
     }
