@@ -122,7 +122,7 @@ async function runNano(env, conversation, retryReasons=null){
   }
 }
 
-async function validate(env, semantic){
+async function validate(env, conversation, semantic){
   if(!env.VALIDATOR || typeof env.VALIDATOR.fetch!=="function") {
     throw diagnosticError("VALIDATOR_BINDING", "VALIDATOR Service Binding is missing");
   }
@@ -131,7 +131,7 @@ async function validate(env, semantic){
     r=await env.VALIDATOR.fetch("https://validator.internal/",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(semantic)
+      body:JSON.stringify({conversation, semantic})
     });
   } catch(e) {
     throw diagnosticError("VALIDATOR_FETCH", String(e?.message||e), {transport:"service_binding"});
@@ -151,7 +151,7 @@ export default {
         return Response.json({error:"conversation required"},{status:400,headers:cors});
 
       const firstSemantic=await runNano(env,conversation);
-      const firstValidation=await validate(env,firstSemantic);
+      const firstValidation=await validate(env,conversation,firstSemantic);
       if(firstValidation.status!=="RETRY"){
         return Response.json({
           status:"completed",
@@ -167,7 +167,7 @@ export default {
       }
 
       const secondSemantic=await runNano(env,conversation,firstValidation.reasons||[]);
-      const secondValidation=await validate(env,secondSemantic);
+      const secondValidation=await validate(env,conversation,secondSemantic);
       if(secondValidation.status==="RETRY"){
         return Response.json({
           status:"validation_failed",
