@@ -30,6 +30,7 @@ const SYSTEM = `
    - no = 原文明確表示不需要、不希望或拒絕任何回應／行動。
    - maybe = 原文有支持「可能期待互動」的訊號，但仍不能確定。
    - unknown = 原文不足以判斷是否期待回應／行動。不要因為「沒有提問／只是陳述」就填 no。
+11. 使用者提出「如果／到時候／看到某狀態就做 X」之類的條件式要求時，可以在 explicit_content / acts 中理解並保留該要求；但除非原文或系統狀態已明確確認技術能力與任務建立成功，不得把它寫成已成立的 obligations 或 obligation_updates。尤其不得把「看到我在線」「到時提醒我」等要求自行升格成背景監控、偵測在線狀態、排程或通知能力。
 `;
 
 const schema = {
@@ -104,6 +105,7 @@ async function runNano(env, conversation, retryReasons=null){
 4. 原文只能支持較窄意思時，只保留較窄意思。
 5. 不加入裴溯應如何回覆的策略，不推斷未明說的個人資料。
 6. response_or_action_expected 的 yes / maybe / no 都需要原文證據；若三者都沒有足夠證據，使用 unknown。「沒有提問／只是陳述」本身不等於 no。
+7. 條件式要求可以保留在 explicit_content / acts；但不能因為使用者提出要求，就在 obligations / obligation_updates 中宣告背景監控、在線偵測、排程、通知等能力或已建立任務。
 不要評論修改，只輸出完整 semantic JSON。`
     : "";
   let r;
@@ -192,6 +194,7 @@ const REVIEWER_SYSTEM = `
    - unknown：原文不足以判斷是否期待回應／行動時使用；這不是錯誤，也不需要硬找期待或拒絕的證據。
    若候選為 yes / maybe / no 而原文不足以支持該值，必須 RETRY，應讓重新判讀有機會改為 unknown；不可替使用者猜。
 5. 檢查其他需要推導才成立的狀態、義務、偏好、風險或互動意義。若候選把使用者的局部界線擴張成一般偏好、把當下情緒擴張成另一種狀態、或加入回覆策略，均視為缺乏證據。
+6. 特別檢查 conversation_context.obligations 與 state_updates.obligation_updates：使用者「提出／修改／取消一個要求」不等於系統已承諾或已具備執行能力。若內容把條件式要求升格成已建立的背景監控、在線偵測、排程、通知或其他技術義務，必須 RETRY。只有已有明確系統確認／能力狀態支持時，才可形成可執行 obligation。
 
 證據標準：
 - PASS 的理由必須是「原文有足夠文字證據」，不是「這個推論合理、常見、可能成立」。
