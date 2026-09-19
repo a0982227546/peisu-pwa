@@ -1,4 +1,4 @@
-// Pei Su semantic retry controller v1 — isolated test
+// Pei Su semantic retry controller v1 — isolated test + diagnostic stage labels
 // Flow: original conversation -> nano r4 -> validator -> at most ONE nano retry -> validator
 // This controller itself does not reinterpret semantics.
 // Required Cloudflare secrets/vars:
@@ -8,19 +8,16 @@
 
 const VALIDATOR_URL_DEFAULT =
   "https://peisu-semantic-validator-v1.a0982227546.workers.dev";
-
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Allow-Methods": "POST,OPTIONS"
 };
 
-// Same semantic-understanding role/rules as nano r4, with retry feedback appended only on retry.
 const SYSTEM = `
 你是「對話語意理解器」，不是角色扮演模型。
 只理解使用者提供的連續對話並輸出結構化互動事件。
 禁止替裴溯寫台詞、決定裴溯如何反應、模仿裴溯人格。
-
 硬性規則：
 1. explicit_content 保留使用者明說的內容；implied_content 只放必要且有文本依據的隱含內容。
 2. 不確定就降低 confidence 並寫 uncertainties，不可把猜測寫成事實。
@@ -73,40 +70,75 @@ const schema = {
   },required:["conversation_context","message_understanding","state_updates"]
 };
 
+function diagnosticError(stage, message, extra={}){
+  const e = new Error(message);
+  e.stage = stage;
+  e.extra = extra;
+  return e;
+}
+
+async function readJsonOrDiagnose(response, stage){
+  const raw = await response.text();
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    throw diagnosticError(stage, `Non-JSON response: ${raw.slice(0,500) || "(empty body)"}`, {
+      http_status: response.status,
+      content_type: response.headers.get("content-type") || null
+    });
+  }
+  return {data, raw};
+}
+
 async function runNano(env, conversation, retryReasons=null){
   const feedback = retryReasons?.length
     ? `\n\n這是一次且僅一次的重新判讀。上一版被驗證器擋下，原因：\n- ${retryReasons.join("\n- ")}\n請重新從原始對話判讀；不要為了迎合驗證器而直接改欄位。`
     : "";
-  const r=await fetch("https://api.openai.com/v1/responses",{
-    method:"POST",
-    headers:{
-      "Authorization":`Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type":"application/json"
-    },
-    body:JSON.stringify({
-      model:"gpt-5-nano",
-      store:false,
-      instructions:SYSTEM+feedback,
-      input:conversation.slice(-12000),
-      text:{format:{type:"json_schema",name:"pei_semantic_event",strict:true,schema}}
-    })
-  });
-  const data=await r.json();
-  if(!r.ok) throw new Error(data?.error?.message||"OpenAI API error");
-  const text=data.output?.flatMap(x=>x.content||[]).find(x=>x.type==="output_text")?.text;
-  if(!text) throw new Error("No structured output");
-  return JSON.parse(text);
+  let r;
+  try {
+    r=await fetch("https://api.openai.com/v1/responses",{
+      method:"POST",
+      headers:{
+        "Authorization":`Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify({
+        model:"gpt-5-nano",
+        store:false,
+        instructions:SYSTEM+feedback,
+        input:conversation.slice(-12000),
+        text:{format:{type:"json_schema",name:"pei_semantic_event",strict:true,schema}}
+      })
+    });
+  } catch(e) {
+    throw diagnosticError("OPENAI_FETCH", String(e?.message||e));
+  }
+  const {data}=await readJsonOrDiagnose(r,"OPENAI_RESPONSE");
+  if(!r.ok) throw diagnosticError("OPENAI_API", data?.error?.message||"OpenAI API error", {http_status:r.status});
+  const text=data?.output?.flatMap(x=>x.content||[]).find(x=>x.type==="output_text")?.text;
+  if(!text) throw diagnosticError("OPENAI_STRUCTURED_OUTPUT","No structured output");
+  try {
+    return JSON.parse(text);
+  } catch(e) {
+    throw diagnosticError("OPENAI_OUTPUT_PARSE", String(e?.message||e));
+  }
 }
 
 async function validate(env, semantic){
   const url=env.VALIDATOR_URL||VALIDATOR_URL_DEFAULT;
-  const r=await fetch(url,{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(semantic)
-  });
-  const data=await r.json();
-  if(!r.ok) throw new Error(data?.error||"Validator error");
+  let r;
+  try {
+    r=await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(semantic)
+    });
+  } catch(e) {
+    throw diagnosticError("VALIDATOR_FETCH", String(e?.message||e), {validator_url:url});
+  }
+  const {data}=await readJsonOrDiagnose(r,"VALIDATOR_RESPONSE");
+  if(!r.ok) throw diagnosticError("VALIDATOR_API", data?.error||"Validator error", {http_status:r.status,validator_url:url});
   return data;
 }
 
@@ -121,7 +153,6 @@ export default {
 
       const firstSemantic=await runNano(env,conversation);
       const firstValidation=await validate(env,firstSemantic);
-
       if(firstValidation.status!=="RETRY"){
         return Response.json({
           status:"completed",
@@ -138,7 +169,6 @@ export default {
 
       const secondSemantic=await runNano(env,conversation,firstValidation.reasons||[]);
       const secondValidation=await validate(env,secondSemantic);
-
       if(secondValidation.status==="RETRY"){
         return Response.json({
           status:"validation_failed",
@@ -168,7 +198,12 @@ export default {
         }
       },{headers:cors});
     }catch(e){
-      return Response.json({error:String(e?.message||e)},{status:500,headers:cors});
+      return Response.json({
+        error:"diagnostic_failure",
+        stage:e?.stage||"CONTROLLER",
+        message:String(e?.message||e),
+        details:e?.extra||{}
+      },{status:500,headers:cors});
     }
   }
 };
