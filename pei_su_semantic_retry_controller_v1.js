@@ -3,11 +3,8 @@
 // This controller itself does not reinterpret semantics.
 // Required Cloudflare secrets/vars:
 //   OPENAI_API_KEY
-// Optional:
-//   VALIDATOR_URL (defaults to the current standalone validator)
-
-const VALIDATOR_URL_DEFAULT =
-  "https://peisu-semantic-validator-v1.a0982227546.workers.dev";
+// Required Cloudflare Service Binding:
+//   VALIDATOR -> peisu-semantic-validator-v1
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
@@ -126,19 +123,21 @@ async function runNano(env, conversation, retryReasons=null){
 }
 
 async function validate(env, semantic){
-  const url=env.VALIDATOR_URL||VALIDATOR_URL_DEFAULT;
+  if(!env.VALIDATOR || typeof env.VALIDATOR.fetch!=="function") {
+    throw diagnosticError("VALIDATOR_BINDING", "VALIDATOR Service Binding is missing");
+  }
   let r;
   try {
-    r=await fetch(url,{
+    r=await env.VALIDATOR.fetch("https://validator.internal/",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(semantic)
     });
   } catch(e) {
-    throw diagnosticError("VALIDATOR_FETCH", String(e?.message||e), {validator_url:url});
+    throw diagnosticError("VALIDATOR_FETCH", String(e?.message||e), {transport:"service_binding"});
   }
   const {data}=await readJsonOrDiagnose(r,"VALIDATOR_RESPONSE");
-  if(!r.ok) throw diagnosticError("VALIDATOR_API", data?.error||"Validator error", {http_status:r.status,validator_url:url});
+  if(!r.ok) throw diagnosticError("VALIDATOR_API", data?.error||"Validator error", {http_status:r.status,transport:"service_binding"});
   return data;
 }
 
