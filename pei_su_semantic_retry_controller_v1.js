@@ -90,7 +90,16 @@ async function readJsonOrDiagnose(response, stage){
 
 async function runNano(env, conversation, retryReasons=null){
   const feedback = retryReasons?.length
-    ? `\n\n這是一次且僅一次的重新判讀。上一版被驗證器擋下，原因：\n- ${retryReasons.join("\n- ")}\n請重新從原始對話判讀；不要為了迎合驗證器而直接改欄位。`
+    ? `\n\n這是一次且僅一次的重新判讀。上一版未通過忠實度／驗證檢查。請重新從原始對話產生完整 semantic。\n
+上一版的具體問題：\n- ${retryReasons.join("\n- ")}\n
+重新判讀時必須遵守：
+1. 問題代表「推論類型」有問題，不只是某個單字；禁止用同義詞保留同一個無證據推論。
+2. implied_content、user_state_or_attitude、relationship_relevance、response_or_action_expected，以及新增的需求／偏好／義務，都必須有原文具體支持。
+3. 有充分證據的理解必須保留；不要因為被退回就把所有內容改成 unknown、none 或空陣列。
+4. 原文只能支持較窄意思時，只保留較窄意思。
+5. 不加入裴溯應如何回覆的策略，不推斷未明說的個人資料。
+6. response_or_action_expected 的 yes / maybe / no 都需要原文證據；「沒有提問／只是陳述」本身不等於 no。
+不要評論修改，只輸出完整 semantic JSON。`
     : "";
   let r;
   try {
@@ -171,7 +180,11 @@ const REVIEWER_SYSTEM = `
 1. 逐項檢查 implied_content 的每一項。
 2. 逐項檢查 user_state_or_attitude 的每一項。
 3. 檢查 relationship_relevance；medium/high 必須有原文明確顯示關係層面的內容，不能只因為語氣強烈、抱怨、拒絕安慰或質疑回覆就提高。
-4. 檢查 response_or_action_expected；maybe/yes 必須有原文支持仍期待某種回應或行動，不能把「仍在說話」本身當成證據。
+4. 檢查 response_or_action_expected 的每一種值（yes / maybe / no）。三種都必須有原文證據：
+   - yes：原文明確要求或明確期待回應／行動。
+   - no：原文明確表示不需要、不希望或拒絕任何回應／行動；「沒有提問」「只是陳述」「沒有明說要回覆」都不能推出 no。
+   - maybe：原文存在可支持「可能期待互動但不確定」的訊號。
+   若原文不足以支持候選值，必須 RETRY；不可因欄位只能三選一就替使用者猜。
 5. 檢查其他需要推導才成立的狀態、義務、偏好、風險或互動意義。若候選把使用者的局部界線擴張成一般偏好、把當下情緒擴張成另一種狀態、或加入回覆策略，均視為缺乏證據。
 
 證據標準：
@@ -201,8 +214,8 @@ function needsSemanticReview(semantic){
   // medium/high relationship relevance is itself a contextual inference.
   if(mu.relationship_relevance==="medium" || mu.relationship_relevance==="high") return true;
 
-  // "maybe/yes" can encode an inferred expectation of response/action.
-  if(mu.response_or_action_expected==="maybe" || mu.response_or_action_expected==="yes") return true;
+  // yes / maybe / no are all semantic judgments and all require evidence review.
+  if(["yes","maybe","no"].includes(mu.response_or_action_expected)) return true;
 
   return false;
 }
