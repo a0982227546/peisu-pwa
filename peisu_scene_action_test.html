@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>裴溯｜場景＋動作測試層 v0.1</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:760px;margin:auto;padding:18px;background:#f5f5f5;color:#222}
+h1{font-size:21px} label{font-weight:700;display:block;margin:14px 0 6px}
+textarea,input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #bbb;border-radius:10px;background:#fff;font-size:16px}
+textarea{min-height:150px} button{margin-top:14px;width:100%;padding:13px;border:0;border-radius:10px;font-size:16px}
+pre{white-space:pre-wrap;word-break:break-word;background:#fff;padding:13px;border-radius:10px;border:1px solid #ddd}
+.note{font-size:14px;color:#666}
+</style>
+</head>
+<body>
+<h1>場景＋動作判斷測試層 v0.1</h1>
+<p class="note">獨立測試，不修改既有 Semantic / Validator / Reviewer / Reply v1.2。</p>
+
+<label>測試 Worker endpoint</label>
+<input id="endpoint" placeholder="部署後貼上 https://...workers.dev">
+
+<label>原始對話</label>
+<textarea id="conversation" placeholder="例如：我有點冷。"></textarea>
+
+<button id="go">開始測試</button>
+
+<label>判斷結果</label>
+<pre id="out">尚未測試</pre>
+
+<script>
+const $=id=>document.getElementById(id);
+$("go").onclick=async()=>{
+  const endpoint=$("endpoint").value.trim();
+  const conversation=$("conversation").value.trim();
+  if(!endpoint||!conversation){$("out").textContent="請填入 endpoint 和原始對話。";return;}
+  $("out").textContent="測試中…";
+  try{
+    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({conversation})});
+    const data=await r.json();
+    $("out").textContent=JSON.stringify(data,null,2);
+  }catch(e){$("out").textContent="錯誤："+e;}
+};
+</script>
+</body>
+</html>
