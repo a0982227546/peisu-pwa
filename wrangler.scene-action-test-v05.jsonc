@@ -1,0 +1,6 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "peisu-scene-action-test-v05",
+  "main": "pei_su_scene_action_test_v0_5.js",
+  "compatibility_date": "2026-09-20"
+}
