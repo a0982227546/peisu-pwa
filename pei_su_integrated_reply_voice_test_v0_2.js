@@ -1,5 +1,3 @@
-const SEMANTIC_URL = "https://peisu-semantic-retry-v1.a0982227546.workers.dev";
-const SCENE_URL = "https://peisu-scene-action-test-v05.a0982227546.workers.dev";
 
 const CORS = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"Content-Type","Access-Control-Allow-Methods":"POST,OPTIONS"};
 const json = (x,s=200)=>new Response(JSON.stringify(x,null,2),{status:s,headers:{...CORS,"Content-Type":"application/json; charset=utf-8"}});
@@ -64,8 +62,8 @@ export default {
     if(!conversation || typeof conversation!=="string") return json({error:"conversation must be a non-empty string"},400);
     const payload=JSON.stringify({conversation});
     const [sr,cr]=await Promise.all([
-      fetch(SEMANTIC_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:payload}),
-      fetch(SCENE_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:payload})
+      env.SEMANTIC.fetch("https://semantic.internal/",{method:"POST",headers:{"Content-Type":"application/json"},body:payload}),
+      env.SCENE_ACTION.fetch("https://scene-action.internal/",{method:"POST",headers:{"Content-Type":"application/json"},body:payload})
     ]);
     const semantic=await sr.json(); const scene=await cr.json();
     if(!sr.ok || semantic?.status!=="completed") return json({error:"semantic pipeline failed",semantic},502);
