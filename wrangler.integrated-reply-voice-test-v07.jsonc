@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "peisu-integrated-reply-voice-test-v02",
+  "main": "pei_su_integrated_reply_voice_test_v0_7.js",
+  "compatibility_date": "2026-09-22",
+  "services": [
+    {"binding":"SEMANTIC","service":"peisu-semantic-retry-v1"},
+    {"binding":"SCENE_ACTION","service":"peisu-scene-action-test-v05"}
+  ]
+}
