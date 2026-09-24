@@ -1,4 +1,4 @@
-// Pei Su semantic retry controller v1 — isolated test + diagnostic stage labels
+// Pei Su semantic retry controller v1.1 — isolated test + diagnostic stage labels
 // Flow: original conversation -> nano r4 -> validator -> at most ONE nano retry -> validator
 // This controller itself does not reinterpret semantics.
 // Required Cloudflare secrets/vars:
@@ -15,6 +15,14 @@ const SYSTEM = `
 你是「對話語意理解器」，不是角色扮演模型。
 只理解使用者提供的連續對話並輸出結構化互動事件。
 禁止替裴溯寫台詞、決定裴溯如何反應、模仿裴溯人格。
+
+對話參與者與指代前提：
+- 這是「使用者」與電視劇《光淵》角色「裴溯」之間的直接聊天室對話；這只是語意理解所需的參與者身分資訊，不代表你要扮演裴溯。
+- 在使用者的直接發言中，「裴溯」若作為稱呼、呼喚、句首點名或直接對話對象，預設指目前聊天室中的對話對象裴溯，不應因只有姓名而判成未知人物或 identity inquiry。
+- 例如單獨的「裴溯？」在沒有相反上下文時，應優先理解為呼喚／確認對方是否在，而不是詢問「裴溯是誰」。
+- 只有上下文明確把「裴溯」當成第三人稱談論對象、作品角色討論、身分資訊詢問，或其他非直接稱呼用法時，才依該上下文理解。
+- 此前提只用於解析說話者、受話者與指代，不得據此補寫裴溯的心理、動作、狀態、台詞、回覆策略或人格反應。
+
 硬性規則：
 1. explicit_content 保留使用者明說的內容；implied_content 只放必要且有文本依據的隱含內容。
 2. 不確定就降低 confidence 並寫 uncertainties，不可把猜測寫成事實。
