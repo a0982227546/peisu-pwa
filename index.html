@@ -1,7 +1,7 @@
 <!doctype html><html lang="zh-Hant"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#11161e"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png">
-<title>裴溯聊天泡泡 LINE 方向測試</title>
-<style>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#11161e"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png">
+<title>裴溯</title><style>
 *{box-sizing:border-box}
 html,body{margin:0;background:#0d1016;color:#eef1f5;font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif}
 .app{width:100%;max-width:640px;min-height:100dvh;margin:auto;background:#11161e;display:flex;flex-direction:column}
@@ -17,95 +17,38 @@ html,body{margin:0;background:#0d1016;color:#eef1f5;font-family:system-ui,-apple
 .composer{display:flex;gap:8px;padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom));border-top:1px solid #2d3541}
 textarea{flex:1;min-width:0;height:58px;resize:none;background:#202731;color:#fff;border:1px solid #414b59;border-radius:14px;padding:10px 12px;font:inherit;line-height:1.4}
 button{min-width:60px;border:1px solid #414b59;border-radius:12px;background:#252d38;color:#fff;font:inherit}
+
+.status{padding:0 14px 8px;color:#8e99a8;font-size:12px;min-height:20px}button:disabled{opacity:.55}
 </style></head><body><div class="app">
-<div class="head"><b>裴溯</b><div class="sub">聊天泡泡｜LINE 排版方向測試 v5</div></div>
-<div class="chat" id="chat">
-<div class="row pei"><div class="group"><div class="bubble">嗯。</div><div class="time">16:47</div></div></div>
-<div class="row pei"><div class="group"><div class="bubble">你想吃什麼？</div><div class="time">16:48</div></div></div>
-<div class="row me"><div class="group"><div class="bubble">裴溯？</div><div class="time">16:49</div></div></div>
-</div>
-<div class="note">這版保留泡泡寬度與內距，只改半形字元的斷行規則。上一版的 overflow-wrap 只在整段溢出時補救，遇到同一行混有多組半形字元仍可能保留成一組；這版改成 word-break: break-all，讓半形英文、數字、~ 等也能逐字元參與換行。</div>
-<div class="composer"><textarea id="inp" placeholder="輸入測試文字；換行不會送出"></textarea><button id="send">送出</button></div>
-</div>
-<script>
-const chat=document.getElementById('chat'),inp=document.getElementById('inp');
-function add(text){
- const row=document.createElement('div');row.className='row me';
+<div class="head"><b>裴溯</b><div class="sub">聊天室整合測試｜v0.15</div></div>
+<div class="chat" id="chat"></div><div class="status" id="status"></div>
+<div class="composer"><textarea id="inp" placeholder="輸入訊息；換行不會送出"></textarea><button id="send">送出</button></div>
+</div><script>
+const ENDPOINT='https://peisu-integrated-reply-voice-test-v02.a0982227546.workers.dev';
+const chat=document.getElementById('chat'),inp=document.getElementById('inp'),send=document.getElementById('send'),statusEl=document.getElementById('status');
+const history=[];
+function now(){return new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}
+function addBubble(role,text){
+ const row=document.createElement('div');row.className='row '+(role==='pei'?'pei':'me');
  const group=document.createElement('div');group.className='group';
  const bubble=document.createElement('div');bubble.className='bubble';bubble.textContent=text;
- const time=document.createElement('div');time.className='time';
- time.textContent=new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
- group.append(bubble,time);row.append(group);chat.append(row);
- inp.value='';row.scrollIntoView({block:'end'});
+ const time=document.createElement('div');time.className='time';time.textContent=now();
+ group.append(bubble,time);row.append(group);chat.append(row);row.scrollIntoView({block:'end'});
 }
-document.getElementById('send').onclick=()=>{const t=inp.value.trim();if(t)add(t)};
-</script>
-<section style="border-top:1px solid #26303d;padding:16px 14px 24px;background:#101620">
-<div style="font-size:17px;font-weight:700;margin-bottom:8px">AI 語意理解層 v0.6｜結構測試</div>
-<div style="font-size:13px;line-height:1.55;color:#9aa6b5;margin-bottom:12px">不再增加情境關鍵字。這版先固定真正 AI 未來必須輸出的事件格式：AI 只理解，不扮演裴溯、不決定回覆。</div>
-<textarea id="semInput" rows="4" placeholder="例如：算了，懶得說你了，過來" style="box-sizing:border-box;width:100%;resize:vertical;border:1px solid #344052;border-radius:14px;background:#1b2330;color:#eef2f7;padding:12px;font-size:16px;line-height:1.45"></textarea>
-<button id="semBuild" style="margin-top:10px;border:1px solid #465268;border-radius:12px;background:#252e3b;color:#fff;padding:10px 14px;font-size:15px">查看事件格式</button>
-<pre id="semOut" style="white-space:pre-wrap;word-break:break-word;background:#0c1119;border:1px solid #273140;border-radius:14px;padding:12px;margin-top:12px;color:#c9d4e3;font-size:12px;line-height:1.55;overflow:auto"></pre>
-<details style="margin-top:12px;color:#aab5c4"><summary>v0.6 管線與權限</summary>
-<div style="font-size:13px;line-height:1.65;margin-top:8px">
-AI理解 → 結構化事件 → v2.1裴溯決策 → Language Layer → OOC → 回覆／行動／沉默。<br><br>
-理解層可以處理：複合行為、跨句延續、修正前文、未完成事項、決定權、互動義務、風險、實體與不確定性。<br>
-理解層禁止：直接寫裴溯台詞、決定裴溯人格反應、只因一句「算了」就忽略同句後半部、把猜測偽裝成高信心理解。
-</div></details>
-</section>
-<script>
-(()=>{
- const schema='{\n  "conversation_context": {\n    "current_topic": "string|null",\n    "open_task": "object|null",\n    "interaction_state": "ordinary|light|teasing|serious|probe|conflict|info_defense|intimate|practical|danger|vulnerable",\n    "decision_owner": "user|pei|shared|undecided|null",\n    "obligations": []\n  },\n  "message_understanding": {\n    "acts": ["可同時有多個互動行為"],\n    "continuation_of_previous": true,\n    "repairs_or_reframes_previous": false,\n    "explicit_content": [],\n    "implied_content": [],\n    "entities": {},\n    "temporal": {},\n    "user_state_or_attitude": [],\n    "relationship_relevance": "low|medium|high",\n    "risk": "none|low|medium|high|urgent",\n    "response_or_action_expected": "no|maybe|yes",\n    "confidence": "low|medium|high",\n    "uncertainties": []\n  },\n  "state_updates": {\n    "open_task": "keep|update|resolve|cancel|none",\n    "decision_owner": "keep|user|pei|shared|undecided",\n    "obligation_updates": []\n  },\n  "forbidden_output": {\n    "pei_dialogue": true,\n    "pei_personality_decision": true\n  }\n}';
- const o=document.getElementById('semOut'),i=document.getElementById('semInput');
- o.textContent=schema;
- document.getElementById('semBuild').onclick=()=>{o.textContent='【原訊息】\n'+(i.value.trim()||'（尚未輸入）')+'\n\n【真正 AI 必須回傳的結構】\n'+schema+'\n\n目前這頁只固定介面契約，沒有假裝已經連上 AI。';};
-})();
-</script>
-
-
-<section style="border-top:1px solid #26303d;padding:16px 14px 26px;background:#0d131c">
-  <div style="font-size:17px;font-weight:700;margin-bottom:8px">v0.7｜真正 AI 理解驗證</div>
-  <div style="font-size:13px;line-height:1.6;color:#9aa6b5">
-    這裡只測「AI 有沒有聽懂」。不產生裴溯台詞。先把安全中介網址填入；之後每次送出會把最近對話送去理解，回傳結構化事件。
-  </div>
-  <input id="apiEndpoint" placeholder="安全中介網址，例如 https://你的網址/semantic"
-    style="box-sizing:border-box;width:100%;margin-top:10px;border:1px solid #344052;border-radius:12px;background:#1b2330;color:#eef2f7;padding:11px;font-size:14px">
-  <textarea id="conversationInput" rows="8" placeholder="貼入或輸入連續對話，例如：
-你：裴溯，你就濕著頭髮啊？
-你：過來，吹乾
-你：要不等會感冒了還得我照顧你
-你：不過來就自己吹
-你：算了，懶得說你了，過來"
-    style="box-sizing:border-box;width:100%;margin-top:10px;resize:vertical;border:1px solid #344052;border-radius:14px;background:#1b2330;color:#eef2f7;padding:12px;font-size:15px;line-height:1.5"></textarea>
-  <button id="analyzeAI" style="margin-top:10px;border:1px solid #465268;border-radius:12px;background:#252e3b;color:#fff;padding:10px 14px;font-size:15px">送去 AI 理解</button>
-  <div id="aiStatus" style="font-size:12px;color:#8996a8;margin-top:8px"></div>
-  <pre id="aiResult" style="white-space:pre-wrap;word-break:break-word;background:#080d14;border:1px solid #273140;border-radius:14px;padding:12px;margin-top:10px;color:#d5deea;font-size:12px;line-height:1.55;overflow:auto"></pre>
-</section>
-<script>
-(()=>{
- const ep=document.getElementById('apiEndpoint'), conv=document.getElementById('conversationInput');
- const status=document.getElementById('aiStatus'), result=document.getElementById('aiResult');
- ep.value=localStorage.getItem('ps_semantic_endpoint')||'';
- ep.onchange=()=>localStorage.setItem('ps_semantic_endpoint',ep.value.trim());
- document.getElementById('analyzeAI').onclick=async()=>{
-   const endpoint=ep.value.trim(), conversation=conv.value.trim();
-   if(!endpoint){status.textContent='還沒有填安全中介網址。';return}
-   if(!conversation){status.textContent='先輸入一段對話。';return}
-   localStorage.setItem('ps_semantic_endpoint',endpoint);
-   status.textContent='理解中…'; result.textContent='';
-   try{
-     const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversation})});
-     const data=await r.json();
-     if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
-     result.textContent=JSON.stringify(data,null,2);
-     status.textContent='完成。這裡只顯示理解結果，尚未交給裴溯決策層。';
-   }catch(e){status.textContent='連線失敗：'+e.message}
- };
-})();
-</script>
-
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+function conversationText(){return history.map(x=>(x.role==='user'?'使用者：':'裴溯：')+x.text).join('\n')}
+async function sendMessage(){
+ const text=inp.value.trim();if(!text||send.disabled)return;
+ inp.value='';addBubble('user',text);history.push({role:'user',text});send.disabled=true;statusEl.textContent='裴溯正在回覆…';
+ try{
+  const r=await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversation:conversationText()})});
+  let data;try{data=await r.json()}catch{throw new Error('伺服器回傳格式錯誤')}
+  if(!r.ok)throw new Error(data?.error||('HTTP '+r.status));
+  const reply=data?.integrated_reply?.text,mode=data?.integrated_reply?.mode;
+  if(mode==='speak'&&typeof reply==='string'&&reply.trim()){addBubble('pei',reply.trim());history.push({role:'pei',text:reply.trim()})}
+  statusEl.textContent='';
+ }catch(e){statusEl.textContent='暫時無法取得裴溯回覆。聊天內容仍保留在這個頁面。'}
+ finally{send.disabled=false;inp.focus()}
 }
+send.onclick=sendMessage;
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
 </script></body></html>
