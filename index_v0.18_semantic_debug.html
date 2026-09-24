@@ -1,0 +1,63 @@
+<!doctype html><html lang="zh-Hant"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#11161e"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png">
+<title>裴溯</title><style>
+*{box-sizing:border-box}
+html,body{margin:0;background:#0d1016;color:#eef1f5;font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif}
+.app{width:100%;max-width:640px;min-height:100dvh;margin:auto;background:#11161e;display:flex;flex-direction:column}
+.head{padding:14px;border-bottom:1px solid #2d3541}.head b{font-size:17px}.sub{font-size:12px;color:#8e99a8;margin-top:4px}
+.chat{flex:1;padding:14px 14px 22px;overflow:auto}
+.row{display:flex;width:100%;margin:11px 0}.row.pei{justify-content:flex-start}.row.me{justify-content:flex-end}
+.group{display:flex;flex-direction:column;min-width:0;max-width:76%}.pei .group{align-items:flex-start}.me .group{align-items:flex-end}
+/* LINE方向：短句由內容撐開；長句只受固定最大寬度限制。完全不做 JS 測字或重排。 */
+.bubble{display:inline-block;width:auto;max-width:100%;padding:10px 11px;border-radius:18px;background:#222a35;font-size:16px;line-height:1.42;text-align:left;white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;line-break:auto}
+.me .bubble{background:#3b475a}
+.time{font-size:10px;color:#778291;margin-top:4px}
+.note{margin:10px 14px 14px;padding:11px 12px;border:1px solid #303947;border-radius:12px;color:#aab4c2;font-size:12px;line-height:1.55}
+.composer{display:flex;gap:8px;padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom));border-top:1px solid #2d3541}
+textarea{flex:1;min-width:0;height:58px;resize:none;background:#202731;color:#fff;border:1px solid #414b59;border-radius:14px;padding:10px 12px;font:inherit;line-height:1.4}
+button{min-width:60px;border:1px solid #414b59;border-radius:12px;background:#252d38;color:#fff;font:inherit}
+
+.status{padding:0 14px 8px;color:#8e99a8;font-size:12px;min-height:20px}button:disabled{opacity:.55}
+.debug{margin:8px 14px 14px;padding:10px;border:1px solid #303947;border-radius:12px;background:#0d1016;color:#b8c2cf;font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-word;max-height:42vh;overflow:auto}</style></head><body><div class="app">
+<div class="head"><b>裴溯</b><div class="sub">聊天室整合測試｜v0.18 Semantic 除錯版</div></div>
+<div class="chat" id="chat"></div><div class="status" id="status"></div>
+<div class="debug" id="debug">Semantic debug：尚未送出訊息</div><div class="composer"><textarea id="inp" placeholder="輸入訊息；換行不會送出"></textarea><button id="send">送出</button></div>
+</div><script>
+const ENDPOINT='https://peisu-integrated-reply-voice-test-v02.a0982227546.workers.dev';
+const chat=document.getElementById('chat'),inp=document.getElementById('inp'),send=document.getElementById('send'),statusEl=document.getElementById('status');
+const debugEl=document.getElementById('debug');
+const history=[];
+function now(){return new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}
+function addBubble(role,text){
+ const row=document.createElement('div');row.className='row '+(role==='pei'?'pei':'me');
+ const group=document.createElement('div');group.className='group';
+ const bubble=document.createElement('div');bubble.className='bubble';bubble.textContent=text;
+ const time=document.createElement('div');time.className='time';time.textContent=now();
+ group.append(bubble,time);row.append(group);chat.append(row);row.scrollIntoView({block:'end'});
+}
+function conversationText(){return history.map(x=>(x.role==='user'?'使用者：':'裴溯：')+x.text).join('\n')}
+async function sendMessage(){
+ const text=inp.value.trim();if(!text||send.disabled)return;
+ inp.value='';addBubble('user',text);history.push({role:'user',text});send.disabled=true;statusEl.textContent='裴溯正在回覆…';
+ try{
+  const r=await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversation:conversationText()})});
+  const raw=await r.text();
+  let data;try{data=JSON.parse(raw)}catch{throw new Error('伺服器回傳格式錯誤｜HTTP '+r.status+'｜原始內容：'+raw.slice(0,800))}
+   debugEl.textContent='【完整回傳／Semantic debug】\n'+JSON.stringify(data,null,2);
+  if(!r.ok)throw new Error((data?.error||('HTTP '+r.status))+'｜回傳：'+JSON.stringify(data).slice(0,800));
+  const replyObj=data?.integrated_reply?.reply;
+   const reply=replyObj?.text,mode=replyObj?.mode;
+  if(mode==='speak'&&typeof reply==='string'&&reply.trim()){
+   addBubble('pei',reply.trim());history.push({role:'pei',text:reply.trim()});statusEl.textContent='';
+  }else if(mode==='silent'){
+   statusEl.textContent='【除錯】本次判定 silent｜'+JSON.stringify(replyObj||data).slice(0,1000);
+  }else{
+   statusEl.textContent='【除錯】未取得可顯示的 speak 回覆｜HTTP '+r.status+'｜'+JSON.stringify(data).slice(0,1000);
+  }
+ }catch(e){statusEl.textContent='【除錯錯誤】'+(e?.message||String(e))}
+ finally{send.disabled=false;inp.focus()}
+}
+send.onclick=sendMessage;
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+</script></body></html>
