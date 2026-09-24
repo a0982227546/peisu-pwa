@@ -20,7 +20,7 @@ button{min-width:60px;border:1px solid #414b59;border-radius:12px;background:#25
 
 .status{padding:0 14px 8px;color:#8e99a8;font-size:12px;min-height:20px}button:disabled{opacity:.55}
 </style></head><body><div class="app">
-<div class="head"><b>裴溯</b><div class="sub">聊天室整合測試｜v0.16 除錯版</div></div>
+<div class="head"><b>裴溯</b><div class="sub">聊天室整合測試｜v0.17 除錯版</div></div>
 <div class="chat" id="chat"></div><div class="status" id="status"></div>
 <div class="composer"><textarea id="inp" placeholder="輸入訊息；換行不會送出"></textarea><button id="send">送出</button></div>
 </div><script>
@@ -44,11 +44,12 @@ async function sendMessage(){
   const raw=await r.text();
   let data;try{data=JSON.parse(raw)}catch{throw new Error('伺服器回傳格式錯誤｜HTTP '+r.status+'｜原始內容：'+raw.slice(0,800))}
   if(!r.ok)throw new Error((data?.error||('HTTP '+r.status))+'｜回傳：'+JSON.stringify(data).slice(0,800));
-  const reply=data?.integrated_reply?.text,mode=data?.integrated_reply?.mode;
+  const replyObj=data?.integrated_reply?.reply;
+   const reply=replyObj?.text,mode=replyObj?.mode;
   if(mode==='speak'&&typeof reply==='string'&&reply.trim()){
    addBubble('pei',reply.trim());history.push({role:'pei',text:reply.trim()});statusEl.textContent='';
   }else if(mode==='silent'){
-   statusEl.textContent='【除錯】本次判定 silent｜'+JSON.stringify(data).slice(0,1000);
+   statusEl.textContent='【除錯】本次判定 silent｜'+JSON.stringify(replyObj||data).slice(0,1000);
   }else{
    statusEl.textContent='【除錯】未取得可顯示的 speak 回覆｜HTTP '+r.status+'｜'+JSON.stringify(data).slice(0,1000);
   }
