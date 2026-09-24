@@ -85,72 +85,52 @@ const schema = {
   }, required:["mode","text","reason_tag","action"]
 };
 
-
-function compactSemantic(x){
-  const s=x?.semantic||x||{};
-  const m=s.message_understanding||{};
-  const out={};
-
-  // Reply 只拿「已明確說出來的內容」與必要的對話結構。
-  // 不把 interaction_state / obligations / implied_content /
-  // user_state_or_attitude / relationship_relevance /
-  // response_or_action_expected 等判斷交給 Reply。
-  if(Array.isArray(m.explicit_content)) out.explicit_content=m.explicit_content;
-  if(typeof m.continuation_of_previous==="boolean")
-    out.continuation_of_previous=m.continuation_of_previous;
-  if(typeof m.repairs_or_reframes_previous==="boolean")
-    out.repairs_or_reframes_previous=m.repairs_or_reframes_previous;
-
-  for(const k of ["boundaries","cancellations","replacements"])
-    if(s[k]!==undefined) out[k]=s[k];
-
-  return out;
-}
-function compactScene(x){
-  const s=x?.result||x||{}, out={};
-  for(const k of ["explicit_scene_facts","continued_scene_state","scene_transitions","usable_objects"])
-    if(s[k]!==undefined) out[k]=s[k];
-  if(Array.isArray(s.conflicts)&&s.conflicts.length) out.conflicts=s.conflicts;
-  const forbidden=s.action_permissions?.forbidden_actions;
-  if(Array.isArray(forbidden)&&forbidden.length) out.forbidden_actions=forbidden;
-  return out;
-}
-
-
-function buildReplyProvenance(semantic,scene){
-  return {
-    usable_facts:{explicit_semantic:compactSemantic(semantic),established_scene:compactScene(scene)},
-    observation_rule:"使用者的觀察只證明使用者作了該觀察；即使觀察內容是「你看起來累／沒精神／心情不好」，也不等於裴溯已確認該狀態為真。也不得另創一個未建立的裴溯當下狀態（例如「我在聽／我在想／我只是累」）來承接、合理化或解釋該觀察。不證明未說出的原因、身體感受、情緒、意圖、相反的隱藏真相、預後或處理需求。",
-    examples:["揉眼睛≠眼睛乾／累／睏／痛","話少≠累／心情差／在想事情，也≠自動成立「我在聽」","看起來心情不錯≠真正心情很好，也≠表面好其實不好","看起來累／沒精神≠裴溯已確認自己累／沒精神"],
-    reply_contract:"只承接實際說出的內容。可形成當下的接受／拒絕／說話／沉默等自主選擇；不得把觀察改寫成未說出口的問題，不得補未知狀態、原因、反面真相、處理或預後。主觀觀察可以被回應，但不能僅憑該觀察確認被觀察狀態，也不能新創另一個當下狀態來承接或解釋它。普通低強度觀察本身不產生證明、反駁、解釋、安撫或製造機鋒／反轉的義務；若沒有原始對話或已驗證狀態提供新的互動依據，不要只為了完成回覆而創造新論點。",
-    action_contract:"實體動作除場景可行外，還必須有原始對話中的當下動機；不能由 Reply 自創狀態後再衍生動作。"
-  };
-}
-
 export default {
  async fetch(req,env){
   if(req.method==="OPTIONS") return new Response(null,{headers:CORS});
   if(req.method!=="POST") return json({error:"POST only"},405);
   try{
-    const body=await req.json(); const conversation=body?.conversation;
-    if(!conversation || typeof conversation!=="string") return json({error:"conversation must be a non-empty string"},400);
-    const payload=JSON.stringify({conversation});
-    const [sr,cr]=await Promise.all([
-      env.SEMANTIC.fetch("https://semantic.internal/",{method:"POST",headers:{"Content-Type":"application/json"},body:payload}),
-      env.SCENE_ACTION.fetch("https://scene-action.internal/",{method:"POST",headers:{"Content-Type":"application/json"},body:payload})
-    ]);
-    const semantic=await sr.json(); const scene=await cr.json();
-    if(!sr.ok || semantic?.status!=="completed") return json({error:"semantic pipeline failed",semantic},502);
-    if(!cr.ok) return json({error:"scene/action pipeline failed",scene_action:scene},502);
-    const replySemantic=compactSemantic(semantic);
-    const replyScene=compactScene(scene);
-    const replyProvenance=buildReplyProvenance(semantic,scene);
-    const input=`原始對話：\n${conversation}\n\nreply_provenance（生成前事實來源契約）：\n${JSON.stringify(replyProvenance,null,2)}\n\n以上資料是事實來源與邊界，不是待辦清單。先守住來源，再依裴溯本人在此刻是否自然會有反應來決定。`;
-    const rr=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Authorization":`Bearer ${env.OPENAI_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({model:env.PEISU_REPLY_MODEL||"gpt-5",input:[{role:"system",content:[{type:"input_text",text:SYSTEM}]},{role:"user",content:[{type:"input_text",text:input}]}],text:{format:{type:"json_schema",name:"pei_su_voice_reply_v015",strict:true,schema}}})});
-    const raw=await rr.json(); if(!rr.ok) return json({error:"reply model failed",detail:raw},502);
-    let reply; try{reply=JSON.parse(textFromResponse(raw));}catch(e){return json({error:"reply JSON parse failed",raw:textFromResponse(raw)},502)}
-    if(reply.mode==="silent") reply.text=""; if(reply.action?.type==="none") reply.action.description="";
-    return json({status:"completed",layer:"peisu_integrated_reply_voice_test_v0.15",isolated:true,semantic_pipeline:{attempts:semantic.attempts,api_calls:semantic.api_calls,reviewer_used:semantic.reviewer_used,fidelity_review:semantic.fidelity_review,final_validation:semantic.final_validation,semantic:semantic.semantic},scene_action:scene,integrated_reply:{model:env.PEISU_REPLY_MODEL||"gpt-5",reply}});
-  }catch(e){return json({error:String(e?.message||e)},500)}
+    const body=await req.json();
+    const conversation=body?.conversation;
+    if(!conversation || typeof conversation!=="string")
+      return json({error:"conversation must be a non-empty string"},400);
+
+    const input=`原始對話：\\n${conversation}`;
+
+    const rr=await fetch("https://api.openai.com/v1/responses",{
+      method:"POST",
+      headers:{
+        "Authorization":`Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify({
+        model:env.PEISU_REPLY_MODEL||"gpt-5",
+        input:[
+          {role:"system",content:[{type:"input_text",text:SYSTEM}]},
+          {role:"user",content:[{type:"input_text",text:input}]}
+        ],
+        text:{format:{type:"json_schema",name:"pei_su_voice_reply_v015",strict:true,schema}}
+      })
+    });
+
+    const raw=await rr.json();
+    if(!rr.ok) return json({error:"reply model failed",detail:raw},502);
+
+    let reply;
+    try{ reply=JSON.parse(textFromResponse(raw)); }
+    catch(e){ return json({error:"reply JSON parse failed",raw:textFromResponse(raw)},502); }
+
+    if(reply.mode==="silent") reply.text="";
+    if(reply.action?.type==="none") reply.action.description="";
+
+    return json({
+      status:"completed",
+      layer:"pei_su_simple_chat_v015",
+      isolated:true,
+      integrated_reply:{model:env.PEISU_REPLY_MODEL||"gpt-5",reply}
+    });
+  }catch(e){
+    return json({error:String(e?.message||e)},500);
+  }
  }
 };
