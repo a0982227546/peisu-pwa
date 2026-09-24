@@ -1,4 +1,4 @@
-// Pei Su semantic retry controller v1.1 — isolated test + diagnostic stage labels
+// Pei Su semantic retry controller v1.2 — current-turn acts fix + diagnostic stage labels
 // Flow: original conversation -> nano r4 -> validator -> at most ONE nano retry -> validator
 // This controller itself does not reinterpret semantics.
 // Required Cloudflare secrets/vars:
@@ -47,6 +47,9 @@ const SYSTEM = `
 13. risk 只記錄原文中有文本依據的風險訊號。沒有可辨識風險訊號時必須使用 none；不得因一般負面情緒、工作抱怨、疲累、煩躁或資訊不足而保守填 low。
 14. uncertainties 只記錄「會影響目前語意理解、且原文本身確實留下的歧義」。不要把未知空白展開成可能需求或可能回覆策略；不得自行列出「可能想被安慰／支持／建議／陪伴」等原文未提出的需求。若某個未知已由 response_or_action_expected=unknown 等欄位完整表達，不必在 uncertainties 重複擴寫。
 15. confidence 表示對「目前已填入的語意判讀」本身的把握度，不表示是否知道使用者下一步要做什麼。某些欄位可以明確而 confidence 高，同時 response_or_action_expected 仍可為 unknown；兩者不矛盾。
+16. message_understanding 是「目前最新一輪使用者訊息」的理解結果。acts、explicit_content、implied_content、user_state_or_attitude、response_or_action_expected、confidence、uncertainties 都以最新一輪使用者訊息為主，不得把前幾輪已經完成的 acts 重複列成這一輪的新行為。
+17. 前文仍必須完整用來理解指代、延續、修正、話題、已發生事件與目前狀態；不要因第16條而忘記前文。需要保留的歷史資訊應反映在 conversation_context、continuation_of_previous、repairs_or_reframes_previous 或 state_updates，而不是把舊 acts 再抄進目前 acts。
+18. 若最新一輪是在停止、拒絕、改變或結束前一輪話題，acts 應描述「這一輪的停止／拒絕／改變／結束」，前一輪曾經做過的呼喚、詢問、描述等只能作為理解背景，不得再次列入 acts。
 `;
 
 const schema = {
@@ -126,6 +129,8 @@ async function runNano(env, conversation, retryReasons=null){
 9. risk 沒有原文風險訊號時用 none；不要因一般負面情緒或資訊不足填 low。
 10. uncertainties 不得把未知展開成原文沒有的安慰、支持、建議、陪伴等可能需求，也不要重複擴寫已由 unknown 表達的未知。
 11. confidence 評估的是目前語意判讀本身的把握度，不是對使用者下一步意圖的把握度。
+12. acts 與 message_understanding 的其他訊息級欄位只描述最新一輪使用者訊息；前文只作為理解背景與狀態來源，不得把舊 acts 重複累積到目前 acts。
+13. 重新判讀時仍須保留前文造成的 conversation_context、延續／修正關係與 state_updates；「只描述最新一輪 acts」不等於忘記前文。
 不要評論修改，只輸出完整 semantic JSON。`
     : "";
   let r;
@@ -219,6 +224,8 @@ const REVIEWER_SYSTEM = `
 8. risk 必須有原文風險訊號支持；一般煩躁、抱怨、疲累或資訊不足不能支持 low。無風險訊號而候選不是 none，RETRY。
 9. uncertainties 只能保留原文真實歧義，不能自行生成未表達的可能需求（例如安慰、支持、建議、陪伴）或回覆策略；若只是把 response_or_action_expected=unknown 換句話重複並額外擴張需求，也應 RETRY。
 10. confidence 只評估候選語意本身的可信度。不得因「不知道使用者是否要回覆／下一步要什麼」就降低整份 semantic 的 confidence；也不得用 high 掩蓋候選中其實沒有文本依據的推論。
+11. 檢查 message_understanding.acts：它只應描述最新一輪使用者訊息中發生的行為。若候選把前幾輪已完成的呼喚、詢問、描述、要求等舊 acts 一併重複列入目前 acts，必須 RETRY。前文可以支持 conversation_context、continuation_of_previous、repairs_or_reframes_previous 與 state_updates，但不能因此把歷史 acts 當成本輪新 acts。
+12. 同樣檢查 message_understanding 的 explicit_content、implied_content、user_state_or_attitude 等訊息級欄位是否把純粹歷史內容誤列成本輪內容；只有最新一輪實際延續、引用、修正或重述時，才可依最新一輪文字保留。
 
 證據標準：
 - PASS 的理由必須是「原文有足夠文字證據」，不是「這個推論合理、常見、可能成立」。
