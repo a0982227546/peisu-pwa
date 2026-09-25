@@ -222,7 +222,9 @@ const REVIEWER_SYSTEM = `
 2. 逐項檢查 user_state_or_attitude 的每一項。
 3. 檢查 relationship_relevance；medium/high 必須有原文明確顯示關係層面的內容，不能只因為語氣強烈、抱怨、拒絕安慰或質疑回覆就提高。
 4. 檢查 response_or_action_expected：
-   - yes：原文明確要求或明確期待回應／行動。
+   - 此欄位只描述「最新一則使用者訊息」是否要求／期待回應或行動。
+   - 不得把較早的使用者訊息、裴溯／assistant 的問句或回覆，當成最新使用者訊息的期待證據。
+   - yes：最新一則使用者訊息明確要求或明確期待回應／行動。
    - no：原文明確表示不需要、不希望或拒絕任何回應／行動；「沒有提問」「只是陳述」「沒有明說要回覆」都不能推出 no。
    - maybe：原文存在可支持「可能期待互動但不確定」的訊號。
    - unknown：原文不足以判斷是否期待回應／行動時使用；這不是錯誤，也不需要硬找期待或拒絕的證據。
@@ -293,7 +295,8 @@ async function reviewSemantic(env, conversation, semantic){
         store:false,
         instructions:REVIEWER_SYSTEM,
         input:
-          "【原始對話】\n"+conversation.slice(-12000)+
+          "【原始對話（僅供上下文）】\n"+conversation.slice(-12000)+
+          "\n\n【重要審核範圍】response_or_action_expected 必須只依最新一則使用者訊息判定；不得使用較早的裴溯／assistant 問句作為期待證據。"+
           "\n\n【候選 semantic】\n"+JSON.stringify(semantic),
         text:{format:{
           type:"json_schema",
