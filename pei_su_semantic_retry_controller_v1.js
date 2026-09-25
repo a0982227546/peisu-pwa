@@ -323,6 +323,80 @@ async function reviewSemantic(env, conversation, semantic){
   }
 }
 
+
+function controllerHardGate(conversation, semantic){
+  const cc=semantic?.conversation_context||{};
+  const mu=semantic?.message_understanding||{};
+  const su=semantic?.state_updates||{};
+
+  const explicit=(mu.explicit_content||[]).join("\n");
+  const source=(explicit || conversation || "").toLowerCase();
+
+  // Detect an information-gap statement such as:
+  // "你沒告訴我 X / X 你倒是沒說 / 我還不知道 X".
+  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
+  if(!gapPattern.test(source)) return {status:"PASS",reasons:[]};
+
+  // Remove the gap wording itself before looking for a real request.
+  // This avoids treating the words "告訴我" inside "你沒告訴我" as a request.
+  const remainder=source
+    .replace(/沒(?:有)?告訴我/g,"")
+    .replace(/還沒告訴我/g,"")
+    .replace(/倒是沒(?:有)?告訴我/g,"")
+    .replace(/你倒是沒(?:有)?說/g,"")
+    .replace(/我還不知道/g,"")
+    .replace(/尚未告訴/g,"")
+    .replace(/未告訴/g,"");
+
+  const explicitRequestPattern=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
+  if(explicitRequestPattern.test(remainder)) return {status:"PASS",reasons:[]};
+
+  const reasons=[];
+  const acts=Array.isArray(mu.acts)?mu.acts:[];
+  if(acts.some(x=>/(request|expect|demand|ask|索取|要求|期待)/i.test(String(x))))
+    reasons.push("controller_hard_gate: 資訊缺失陳述沒有明確索取證據，acts 不得建立 request/expectation 類語意");
+
+  const implied=Array.isArray(mu.implied_content)?mu.implied_content:[];
+  if(implied.some(x=>/(期待|需要|需補充|希望|要求|提供|告知.*需求|待.*告知)/.test(String(x))))
+    reasons.push("controller_hard_gate: implied_content 不得把資訊缺失改寫成期待／需要提供資訊");
+
+  const uncertainties=Array.isArray(mu.uncertainties)?mu.uncertainties:[];
+  if(uncertainties.some(x=>/(請求|需要.*提供|是否需要.*提供|待.*回覆|需.*告知)/.test(String(x))))
+    reasons.push("controller_hard_gate: uncertainties 不得重新生成未明確的請求／提供需求");
+
+  if(mu.response_or_action_expected!=="unknown")
+    reasons.push("controller_hard_gate: 純資訊缺失陳述的 response_or_action_expected 必須為 unknown");
+
+  if(cc.open_task!==null)
+    reasons.push("controller_hard_gate: 純資訊缺失陳述不得建立 open_task");
+
+  if(Array.isArray(cc.obligations) && cc.obligations.length)
+    reasons.push("controller_hard_gate: 純資訊缺失陳述不得建立 obligations");
+
+  if(su.open_task!=="none")
+    reasons.push("controller_hard_gate: 純資訊缺失陳述不得 update/建立 task");
+
+  if(Array.isArray(su.obligation_updates) && su.obligation_updates.length)
+    reasons.push("controller_hard_gate: 純資訊缺失陳述不得新增 obligation_updates");
+
+  return reasons.length ? {status:"RETRY",reasons} : {status:"PASS",reasons:[]};
+}
+
+function applyControllerHardGate(conversation, semantic, validation){
+  if(validation?.status==="RETRY") return validation;
+  const clean=validation?.semantic||semantic;
+  const gate=controllerHardGate(conversation,clean);
+  if(gate.status==="RETRY"){
+    return {
+      status:"RETRY",
+      reasons:gate.reasons,
+      semantic:clean,
+      controller_hard_gate:"RETRY"
+    };
+  }
+  return validation;
+}
+
 function reviewerReasons(review){
   return (review?.issues||[]).map(
     x=>`${x.field}: ${x.value} — ${x.reason}`
@@ -340,13 +414,15 @@ export default {
 
       // API call #1: first semantic understanding.
       const firstSemantic=await runNano(env,conversation);
-      const firstValidation=await validate(env,conversation,firstSemantic);
+      let firstValidation=await validate(env,conversation,firstSemantic);
+      firstValidation=applyControllerHardGate(conversation,firstSemantic,firstValidation);
 
       // Mechanical validator RETRY goes directly to the one allowed regeneration.
       if(firstValidation.status==="RETRY"){
         const reasons=firstValidation.reasons||[];
         const secondSemantic=await runNano(env,conversation,reasons); // API call #2
-        const secondValidation=await validate(env,conversation,secondSemantic);
+        let secondValidation=await validate(env,conversation,secondSemantic);
+        secondValidation=applyControllerHardGate(conversation,secondSemantic,secondValidation);
 
         if(secondValidation.status==="RETRY"){
           return Response.json({
@@ -470,7 +546,8 @@ export default {
       // API call #3: one and only semantic regeneration.
       const retryReasons=reviewerReasons(firstReview);
       const secondSemantic=await runNano(env,conversation,retryReasons);
-      const secondValidation=await validate(env,conversation,secondSemantic);
+      let secondValidation=await validate(env,conversation,secondSemantic);
+      secondValidation=applyControllerHardGate(conversation,secondSemantic,secondValidation);
 
       // Hard stop: no fourth API call and no second reviewer call.
       if(secondValidation.status==="RETRY"){
