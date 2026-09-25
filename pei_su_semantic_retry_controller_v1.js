@@ -56,6 +56,7 @@ const SYSTEM = `
 22. conversation_context.open_task 與 state_updates.open_task 必須語意一致：若本輪沒有明確建立、修改或取消任務，conversation_context.open_task 應為 null，state_updates.open_task 應為 none；不得出現上方 null、下方 update 的矛盾。
 23. 資訊缺失陳述不得改名繞過規則：對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」這類句子，若沒有明確索取答案的語用證據，不只不得標成 request_*，也不得標成 indirect_request_*、implicit_request_*、hint_request_* 或任何等價的間接請求 act；response_or_action_expected 必須為 unknown，不得用 maybe 代替。
 24. 上述資訊缺失陳述的禁止範圍也包含裸標籤：implicit_request、indirect_request、request、hint_request 及任何語意等價標籤都不得使用；同時 implied_content 不得自行加入「使用者期待／希望／要求裴溯提供 X」之類未由原句明確支持的期待。若原句只有「你沒告訴我 X／X 你倒是沒說／我還不知道 X」而無真正索取答案的語用證據，應只保留資訊缺失本身，response_or_action_expected 維持 unknown。
+25. 資訊缺失陳述不得從文字欄位重新任務化：若原句只是「你沒告訴我 X／X 你倒是沒說／我還不知道 X」且沒有真正索取答案的語用證據，implied_content 與 uncertainties 都不得寫成「需補充 X」「需要／期待／希望裴溯提供 X」「存在未明確的請求」「是否需要裴溯提供 X」或任何等價說法。可以記錄的只有『X 尚未告知／目前未知』這個資訊狀態本身，不得推導成保密、故意隱瞞、承諾稍後告知或待辦。
 `;
 
 const schema = {
@@ -243,6 +244,7 @@ const REVIEWER_SYSTEM = `
 - 檢查 conversation_context.open_task 與 state_updates.open_task 是否一致。若沒有明確任務變更，前者為 null 時後者不得為 update；此類矛盾必須 RETRY。
 - 對資訊缺失陳述再做繞規則檢查：沒有明確索取答案的語用證據時，若 acts 出現 indirect_request_*、implicit_request_*、hint_request_* 或其他等價間接請求，必須 RETRY；response_or_action_expected 若為 maybe 或 yes 也必須 RETRY，應為 unknown。
 - 同一檢查必須涵蓋裸值 implicit_request、indirect_request、request、hint_request；若 implied_content 自行補入「使用者期待／希望／要求提供 X」也必須 RETRY。只有資訊缺失陳述且無明確索取證據時，這些內容不得出現在最終結果。
+- Reviewer 必須同時檢查 implied_content 與 uncertainties：對只有資訊缺失、沒有索取證據的句子，只要出現「需補充」「需要／期待／希望提供」「未明確的請求」「是否需要提供」或把未知改寫成保密／故意隱瞞／稍後提供，即必須 RETRY；最終只能保留 X 尚未告知／未知的資訊狀態。
 
 證據標準：
 - PASS 的理由必須是「原文有足夠文字證據」，不是「這個推論合理、常見、可能成立」。
