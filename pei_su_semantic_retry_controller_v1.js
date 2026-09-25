@@ -54,6 +54,7 @@ const SYSTEM = `
 20. 不得把未知空白改寫成潛在任務。例如「忘了帶錢包」不自動推出使用者可能需要解決方案、協助付款、找錢包或建議；若原文沒有提出，current_topic、uncertainties、open_task 與 implied_content 都不要補。
 21. 「你沒告訴我 X」「X 你倒是沒說」「我還不知道 X」首先是對資訊缺失的陳述，不等於索取該資訊。除非同一句或直接上下文明確出現「告訴我／說一下／是什麼／叫什麼／能不能告訴我」等提問、命令、請求或催促證據，acts 不得標成 request_*，response_or_action_expected 不得因此填 yes，open_task 不得因此建立或 update，uncertainties 也不得寫成「需對方提供 X」。
 22. conversation_context.open_task 與 state_updates.open_task 必須語意一致：若本輪沒有明確建立、修改或取消任務，conversation_context.open_task 應為 null，state_updates.open_task 應為 none；不得出現上方 null、下方 update 的矛盾。
+23. 資訊缺失陳述也不得改名成「間接請求」來繞過規則：對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」等句型，只要沒有額外的索取答案語用證據，acts 不得出現 indirect_request_*、implicit_request_*、request_for_* 或任何等價的請求標籤；response_or_action_expected 應為 unknown，而不是 maybe/yes。好奇、關係親近、通常可能會回話，都不能單獨構成 request。
 `;
 
 const schema = {
@@ -239,6 +240,7 @@ const REVIEWER_SYSTEM = `
 - 檢查 current_topic / uncertainties 是否憑空增加「可能需要協助、解決方案、建議」等潛在需求；原文沒提出就 RETRY。
 - 對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」做硬性核對：這類資訊缺失陳述本身不能支持 request_*、response_or_action_expected=yes、open_task 建立／update，或「需對方提供 X」之類 uncertainty。只有原文另有明確提問、命令、請求或催促才可支持；否則任一出現都必須 RETRY。
 - 檢查 conversation_context.open_task 與 state_updates.open_task 是否一致。若沒有明確任務變更，前者為 null 時後者不得為 update；此類矛盾必須 RETRY。
+- 對資訊缺失陳述再做一次「間接請求」硬檢查：若沒有額外的索取答案語用證據，indirect_request_*、implicit_request_*、request_for_* 或任何等價請求標籤都屬錯誤，response_or_action_expected=maybe/yes 也屬錯誤，必須 RETRY；正確應維持 statement/inform 類 acts，response_or_action_expected=unknown。
 
 證據標準：
 - PASS 的理由必須是「原文有足夠文字證據」，不是「這個推論合理、常見、可能成立」。
