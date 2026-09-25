@@ -55,6 +55,7 @@ const SYSTEM = `
 21. 「你沒告訴我 X」「X 你倒是沒說」「我還不知道 X」首先是對資訊缺失的陳述，不等於索取該資訊。除非同一句或直接上下文明確出現「告訴我／說一下／是什麼／叫什麼／能不能告訴我」等提問、命令、請求或催促證據，acts 不得標成 request_*，response_or_action_expected 不得因此填 yes，open_task 不得因此建立或 update，uncertainties 也不得寫成「需對方提供 X」。
 22. conversation_context.open_task 與 state_updates.open_task 必須語意一致：若本輪沒有明確建立、修改或取消任務，conversation_context.open_task 應為 null，state_updates.open_task 應為 none；不得出現上方 null、下方 update 的矛盾。
 23. 資訊缺失陳述不得改名繞過規則：對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」這類句子，若沒有明確索取答案的語用證據，不只不得標成 request_*，也不得標成 indirect_request_*、implicit_request_*、hint_request_* 或任何等價的間接請求 act；response_or_action_expected 必須為 unknown，不得用 maybe 代替。
+24. 上述資訊缺失陳述的禁止範圍也包含裸標籤：implicit_request、indirect_request、request、hint_request 及任何語意等價標籤都不得使用；同時 implied_content 不得自行加入「使用者期待／希望／要求裴溯提供 X」之類未由原句明確支持的期待。若原句只有「你沒告訴我 X／X 你倒是沒說／我還不知道 X」而無真正索取答案的語用證據，應只保留資訊缺失本身，response_or_action_expected 維持 unknown。
 `;
 
 const schema = {
@@ -241,6 +242,7 @@ const REVIEWER_SYSTEM = `
 - 對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」做硬性核對：這類資訊缺失陳述本身不能支持 request_*、response_or_action_expected=yes、open_task 建立／update，或「需對方提供 X」之類 uncertainty。只有原文另有明確提問、命令、請求或催促才可支持；否則任一出現都必須 RETRY。
 - 檢查 conversation_context.open_task 與 state_updates.open_task 是否一致。若沒有明確任務變更，前者為 null 時後者不得為 update；此類矛盾必須 RETRY。
 - 對資訊缺失陳述再做繞規則檢查：沒有明確索取答案的語用證據時，若 acts 出現 indirect_request_*、implicit_request_*、hint_request_* 或其他等價間接請求，必須 RETRY；response_or_action_expected 若為 maybe 或 yes 也必須 RETRY，應為 unknown。
+- 同一檢查必須涵蓋裸值 implicit_request、indirect_request、request、hint_request；若 implied_content 自行補入「使用者期待／希望／要求提供 X」也必須 RETRY。只有資訊缺失陳述且無明確索取證據時，這些內容不得出現在最終結果。
 
 證據標準：
 - PASS 的理由必須是「原文有足夠文字證據」，不是「這個推論合理、常見、可能成立」。
