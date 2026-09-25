@@ -382,18 +382,26 @@ function controllerHardGate(conversation, semantic){
   return reasons.length ? {status:"RETRY",reasons} : {status:"PASS",reasons:[]};
 }
 
+
 function sanitizeMissingInformationSemantic(conversation, semantic){
-  const x=JSON.parse(JSON.stringify(semantic||{})), mu=x.message_understanding||{}, cc=x.conversation_context||{}, su=x.state_updates||{};
+  const x=JSON.parse(JSON.stringify(semantic||{}));
+  const mu=x.message_understanding||{}, cc=x.conversation_context||{}, su=x.state_updates||{};
   const source=((mu.explicit_content||[]).join("\n")||conversation||"").toLowerCase();
-  if(!/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/.test(source)) return x;
+  const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
+  if(!gap.test(source)) return x;
   const remainder=source.replace(/沒(?:有)?告訴我|還沒告訴我|倒是沒(?:有)?告訴我|你倒是沒(?:有)?說|我還不知道|尚未告訴|未告訴/g,"");
-  if(/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/.test(remainder)) return x;
-  mu.acts=(mu.acts||[]).filter(v=>!/(request|expect|demand|ask|索取|要求|期待)/i.test(String(v)));
+  const request=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
+  if(request.test(remainder)) return x;
+
+  mu.acts=(Array.isArray(mu.acts)?mu.acts:[]).filter(v=>!/(request|expect|demand|ask|索取|要求|期待)/i.test(String(v)));
   if(!mu.acts.length) mu.acts=["statement","note_missing_information"];
-  mu.implied_content=(mu.implied_content||[]).filter(v=>!/(期待|期望|希望|想要|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(v)));
-  mu.uncertainties=(mu.uncertainties||[]).filter(v=>!/(請求|期待|期望|希望|想要|需要|要求|索取|提供|告知|意圖)/.test(String(v)));
-  mu.response_or_action_expected="unknown"; cc.open_task=null; cc.obligations=[]; su.open_task="none"; su.obligation_updates=[];
-  x.message_understanding=mu;x.conversation_context=cc;x.state_updates=su;return x;
+  mu.implied_content=(Array.isArray(mu.implied_content)?mu.implied_content:[]).filter(v=>!/(期待|期望|希望|想要|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(v)));
+  mu.uncertainties=(Array.isArray(mu.uncertainties)?mu.uncertainties:[]).filter(v=>!/(請求|期待|期望|希望|想要|需要|要求|索取|提供|告知|意圖)/.test(String(v)));
+  mu.response_or_action_expected="unknown";
+  cc.open_task=null; cc.obligations=[];
+  su.open_task="none"; su.obligation_updates=[];
+  x.message_understanding=mu; x.conversation_context=cc; x.state_updates=su;
+  return x;
 }
 
 function applyControllerHardGate(conversation, semantic, validation){
@@ -435,26 +443,11 @@ export default {
       if(firstValidation.status==="RETRY"){
         const reasons=firstValidation.reasons||[];
         const secondSemantic=await runNano(env,conversation,reasons); // API call #2
-        let secondValidation=await validate(env,conversation,secondSemantic);
+        const sanitizedSecondSemantic=sanitizeMissingInformationSemantic(conversation,secondSemantic);
+        let secondValidation=await validate(env,conversation,sanitizedSecondSemantic);
         secondValidation=applyControllerHardGate(conversation,secondSemantic,secondValidation);
 
         if(secondValidation.status==="RETRY"){
-        const hardOnly=(secondValidation.reasons||[]).length>0&&(secondValidation.reasons||[]).every(r=>String(r).startsWith("controller_hard_gate:"));
-        if(hardOnly){
-          const safe=sanitizeMissingInformationSemantic(conversation,secondValidation.semantic||secondSemantic);
-          let safeV=await validate(env,conversation,safe);
-          safeV=applyControllerHardGate(conversation,safe,safeV);
-          if(safeV.status!=="RETRY") secondValidation={...safeV,semantic:safeV.semantic||safe,controller_hard_gate:"SANITIZED_AFTER_RETRY"};
-        }
-        if(secondValidation.status==="RETRY")
-          const hardOnly=(secondValidation.reasons||[]).length>0&&(secondValidation.reasons||[]).every(r=>String(r).startsWith("controller_hard_gate:"));
-          if(hardOnly){
-            const safe=sanitizeMissingInformationSemantic(conversation,secondValidation.semantic||secondSemantic);
-            let safeV=await validate(env,conversation,safe);
-            safeV=applyControllerHardGate(conversation,safe,safeV);
-            if(safeV.status!=="RETRY") secondValidation={...safeV,semantic:safeV.semantic||safe,controller_hard_gate:"SANITIZED_AFTER_RETRY"};
-          }
-          if(secondValidation.status==="RETRY")
           return Response.json({
             status:"validation_failed",
             attempts:2,
@@ -576,7 +569,8 @@ export default {
       // API call #3: one and only semantic regeneration.
       const retryReasons=reviewerReasons(firstReview);
       const secondSemantic=await runNano(env,conversation,retryReasons);
-      let secondValidation=await validate(env,conversation,secondSemantic);
+      const sanitizedSecondSemantic=sanitizeMissingInformationSemantic(conversation,secondSemantic);
+      let secondValidation=await validate(env,conversation,sanitizedSecondSemantic);
       secondValidation=applyControllerHardGate(conversation,secondSemantic,secondValidation);
 
       // Hard stop: no fourth API call and no second reviewer call.
