@@ -52,6 +52,8 @@ const SYSTEM = `
 18. 時態必須服從原文與已建立時間線。「回家的時候看到什麼」「剛才／下午／晚上發生什麼」等回顧式問法，若上下文已有對應已發生事件，不得判成 future observation、未來預測或尚待發生的事件。
 19. 中文口語、慣用語與固定搭配應先按整句語義理解，不得優先把其中單字拆成物件義。例如「出了什麼包」在回顧事件的上下文中可表示「出了什麼狀況／出了什麼岔子」；除非上下文確實在談實體包袋，不能只因出現「包」就推成錢包／包包指涉歧義。
 20. 不得把未知空白改寫成潛在任務。例如「忘了帶錢包」不自動推出使用者可能需要解決方案、協助付款、找錢包或建議；若原文沒有提出，current_topic、uncertainties、open_task 與 implied_content 都不要補。
+21. 「你沒告訴我 X」「X 你倒是沒說」「我還不知道 X」首先是對資訊缺失的陳述，不等於索取該資訊。除非同一句或直接上下文明確出現「告訴我／說一下／是什麼／叫什麼／能不能告訴我」等提問、命令、請求或催促證據，acts 不得標成 request_*，response_or_action_expected 不得因此填 yes，open_task 不得因此建立或 update，uncertainties 也不得寫成「需對方提供 X」。
+22. conversation_context.open_task 與 state_updates.open_task 必須語意一致：若本輪沒有明確建立、修改或取消任務，conversation_context.open_task 應為 null，state_updates.open_task 應為 none；不得出現上方 null、下方 update 的矛盾。
 `;
 
 const schema = {
@@ -235,6 +237,8 @@ const REVIEWER_SYSTEM = `
 - 檢查過去／現在／未來時態是否與原文及已建立時間線一致；不得把回顧已發生事件誤判成 future observation。
 - 檢查中文口語是否被逐字拆錯；固定搭配應按整句與上下文理解，不因單一字詞製造不存在的物件歧義。
 - 檢查 current_topic / uncertainties 是否憑空增加「可能需要協助、解決方案、建議」等潛在需求；原文沒提出就 RETRY。
+- 對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」做硬性核對：這類資訊缺失陳述本身不能支持 request_*、response_or_action_expected=yes、open_task 建立／update，或「需對方提供 X」之類 uncertainty。只有原文另有明確提問、命令、請求或催促才可支持；否則任一出現都必須 RETRY。
+- 檢查 conversation_context.open_task 與 state_updates.open_task 是否一致。若沒有明確任務變更，前者為 null 時後者不得為 update；此類矛盾必須 RETRY。
 
 證據標準：
 - PASS 的理由必須是「原文有足夠文字證據」，不是「這個推論合理、常見、可能成立」。
