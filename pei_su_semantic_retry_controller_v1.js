@@ -357,12 +357,12 @@ function controllerHardGate(conversation, semantic){
     reasons.push("controller_hard_gate: 資訊缺失陳述沒有明確索取證據，acts 不得建立 request/expectation 類語意");
 
   const implied=Array.isArray(mu.implied_content)?mu.implied_content:[];
-  if(implied.some(x=>/(期待|需要|需補充|希望|要求|提供|告知.*需求|待.*告知)/.test(String(x))))
-    reasons.push("controller_hard_gate: implied_content 不得把資訊缺失改寫成期待／需要提供資訊");
+  if(implied.some(x=>/(期待|期望|希望|想要|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(x))))
+    reasons.push("controller_hard_gate: implied_content 不得把資訊缺失改寫成期待／希望／需要提供資訊或提供意圖");
 
   const uncertainties=Array.isArray(mu.uncertainties)?mu.uncertainties:[];
-  if(uncertainties.some(x=>/(請求|需要.*提供|是否需要.*提供|待.*回覆|需.*告知)/.test(String(x))))
-    reasons.push("controller_hard_gate: uncertainties 不得重新生成未明確的請求／提供需求");
+  if(uncertainties.some(x=>/(請求|期待|期望|希望|想要|需要|要求|索取|提供|告知|意圖)/.test(String(x))))
+    reasons.push("controller_hard_gate: uncertainties 不得重新生成未明確的請求／期待／提供意圖");
 
   if(mu.response_or_action_expected!=="unknown")
     reasons.push("controller_hard_gate: 純資訊缺失陳述的 response_or_action_expected 必須為 unknown");
