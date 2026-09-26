@@ -618,7 +618,7 @@ export default {
         const secondSemantic=await runNano(env,conversation,reasons); // API call #2
         const sanitizedSecondSemantic=sanitizeMissingInformationSemantic(conversation,secondSemantic);
         let secondValidation=await validate(env,conversation,sanitizedSecondSemantic);
-        secondValidation=applyControllerHardGate(conversation,secondSemantic,secondValidation);
+        secondValidation=applyControllerHardGate(conversation,sanitizedSecondSemantic,secondValidation);
 
         if(secondValidation.status==="RETRY"){
           return Response.json({
@@ -746,7 +746,7 @@ export default {
       const secondSemantic=await runNano(env,conversation,retryReasons);
       const sanitizedSecondSemantic=sanitizeMissingInformationSemantic(conversation,secondSemantic);
       let secondValidation=await validate(env,conversation,sanitizedSecondSemantic);
-      secondValidation=applyControllerHardGate(conversation,secondSemantic,secondValidation);
+      secondValidation=applyControllerHardGate(conversation,sanitizedSecondSemantic,secondValidation);
 
       // Hard stop: no fourth API call and no second reviewer call.
       if(secondValidation.status==="RETRY"){
