@@ -361,13 +361,12 @@ function arbitrateReviewerWithHardGate(conversation, review){
   const kept=issues.filter(issue=>{
     const field=String(issue?.field||"");
     const reason=String(issue?.reason||"");
-    // The deterministic missing-information boundary has already decided that
-    // this latest turn is not an explicit request. Reviewer may still audit all
-    // unrelated fields, but may not re-create request/expectation semantics.
-    if(field.includes("message_understanding.response_or_action_expected") &&
-       /(should be ['\"]?(?:yes|maybe)|expects?|expected|implicitly requests?|request|disclos|provide|告知|提供|期待|請求)/i.test(reason)) return false;
-    if(field.includes("message_understanding.acts") &&
-       /(implicit(?:ly)? request|request|expect|disclos|provide|告知|提供|期待|請求)/i.test(reason)) return false;
+    const isExpected=field==="response_or_action_expected" || field.endsWith(".response_or_action_expected");
+    const isActs=field==="acts" || field.endsWith(".acts");
+    const isImplied=field==="implied_content" || field.endsWith(".implied_content");
+    const isAttitude=field==="user_state_or_attitude" || field.endsWith(".user_state_or_attitude");
+    const requestInference=/(yes|maybe|expect|request|disclos|provide|告知|提供|期待|請求|明確要求|想知道)/i.test(reason);
+    if((isExpected||isActs||isImplied||isAttitude) && requestInference) return false;
     return true;
   });
   return kept.length ? {status:"RETRY",issues:kept} : {status:"PASS",issues:[]};
@@ -406,7 +405,7 @@ function controllerHardGate(conversation, semantic){
     reasons.push("controller_hard_gate: 資訊缺失陳述沒有明確索取證據，acts 不得建立 request/expectation 類語意");
 
   const implied=Array.isArray(mu.implied_content)?mu.implied_content:[];
-  if(implied.some(x=>/(期待|期望|希望|想要|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(x))))
+  if(implied.some(x=>/(期待|期望|希望|想要|想知道|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(x))))
     reasons.push("controller_hard_gate: implied_content 不得把資訊缺失改寫成期待／希望／需要提供資訊或提供意圖");
 
   const uncertainties=Array.isArray(mu.uncertainties)?mu.uncertainties:[];
@@ -456,7 +455,7 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   const explicitRelationshipEvidence=/(我們(?:的)?關係|你跟我|我跟你|信任|親近|疏遠|承諾|我們之間|彼此)/.test(source);
   if(!explicitRelationshipEvidence) mu.relationship_relevance="low";
 
-  mu.implied_content=(Array.isArray(mu.implied_content)?mu.implied_content:[]).filter(v=>!/(期待|期望|希望|想要|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(v)));
+  mu.implied_content=(Array.isArray(mu.implied_content)?mu.implied_content:[]).filter(v=>!/(期待|期望|希望|想要|想知道|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(v)));
   mu.uncertainties=(Array.isArray(mu.uncertainties)?mu.uncertainties:[]).filter(v=>!/(請求|期待|期望|希望|想要|需要|要求|索取|提供|告知|意圖)/.test(String(v)));
   mu.response_or_action_expected="unknown";
   cc.open_task=null; cc.obligations=[];
