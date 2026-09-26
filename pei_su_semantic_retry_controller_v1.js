@@ -363,7 +363,7 @@ function hasExplicitRequestBeyondInformationGap(source){
 
 function missingInformationBoundaryActive(conversation){
   const source=latestUserTurn(conversation).toLowerCase();
-  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
+  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|尚未告訴|未告訴)/;
   if(!gapPattern.test(source)) return false;
   return !hasExplicitRequestBeyondInformationGap(source);
 }
@@ -413,7 +413,7 @@ function controllerHardGate(conversation, semantic){
 
   // Detect an information-gap statement such as:
   // "你沒告訴我 X / X 你倒是沒說 / 我還不知道 X".
-  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
+  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|尚未告訴|未告訴)/;
   if(!gapPattern.test(source)) return {status:"PASS",reasons:[]};
 
   // Remove the gap wording itself before looking for a real request.
@@ -457,7 +457,7 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   const mu=x.message_understanding||{}, cc=x.conversation_context||{}, su=x.state_updates||{};
   const source=latestUserTurn(conversation).toLowerCase();
 
-  const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
+  const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|尚未告訴|未告訴)/;
   if(!gap.test(source)) return x;
 
   if(hasExplicitRequestBeyondInformationGap(source)) return x;
@@ -471,7 +471,7 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   const explicitRelationship=/(我們(?:的)?關係|你跟我|我跟你|信任|親近|疏遠|承諾|我們之間|彼此)/.test(source);
 
   const requestLike=/(request|expect|demand|ask|索取|要求|期待)/i;
-  const unsupportedEmotionAct=/(dissatisf|complain|annoy|impatient|frustrat|disappoint|curious|不滿|抱怨|不耐煩|失望|好奇)/i;
+  const unsupportedEmotionAct=/(dissatisf|complain|annoy|impatient|frustrat|disappoint|curious|inquisit|不滿|抱怨|不耐煩|失望|好奇)/i;
 
   mu.acts=(Array.isArray(mu.acts)?mu.acts:[]).filter(v=>{
     const s=String(v);
@@ -486,7 +486,7 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
 
   if(!explicitEmotion){
     mu.user_state_or_attitude=(Array.isArray(mu.user_state_or_attitude)?mu.user_state_or_attitude:[])
-      .filter(v=>!/(期待|期望|希望|想知道|curious|impatient|annoy|dissatisf|frustrat|disappoint|不滿|抱怨|不耐煩|失望|好奇|expect)/i.test(String(v)));
+      .filter(v=>!/(期待|期望|希望|想知道|curious|inquisit|impatient|annoy|dissatisf|frustrat|disappoint|不滿|抱怨|不耐煩|失望|好奇|expect)/i.test(String(v)));
   }
 
   if(!explicitRelationship) mu.relationship_relevance="low";
