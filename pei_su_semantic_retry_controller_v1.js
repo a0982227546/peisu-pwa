@@ -339,11 +339,8 @@ function latestUserTurn(conversation){
   return String(conversation||"").trim();
 }
 
-function missingInformationBoundaryActive(conversation){
-  const source=latestUserTurn(conversation).toLowerCase();
-  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
-  if(!gapPattern.test(source)) return false;
-  const remainder=source
+function hasExplicitRequestBeyondInformationGap(source){
+  const remainder=String(source||"")
     .replace(/沒(?:有)?告訴我/g,"")
     .replace(/還沒告訴我/g,"")
     .replace(/倒是沒(?:有)?告訴我/g,"")
@@ -351,8 +348,24 @@ function missingInformationBoundaryActive(conversation){
     .replace(/我還不知道/g,"")
     .replace(/尚未告訴/g,"")
     .replace(/未告訴/g,"");
-  const explicitRequestPattern=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
-  return !explicitRequestPattern.test(remainder);
+
+  // Strong request evidence remains a request even when the same turn also
+  // contains a missing-information statement.
+  const strongRequest=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|可以說|快說|現在說|回答我|我想知道)/;
+  if(strongRequest.test(remainder)) return true;
+
+  // A wh-clause embedded inside a declarative gap statement is content of the
+  // missing information, not by itself a request: e.g.
+  // 「我記得你還沒告訴我那本書叫什麼名字。」
+  // Keep an actual interrogative when the user marks it as a question.
+  return /[？?]/.test(remainder) && /(是什麼|叫什麼|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)/.test(remainder);
+}
+
+function missingInformationBoundaryActive(conversation){
+  const source=latestUserTurn(conversation).toLowerCase();
+  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
+  if(!gapPattern.test(source)) return false;
+  return !hasExplicitRequestBeyondInformationGap(source);
 }
 
 function arbitrateReviewerWithHardGate(conversation, review){
@@ -405,17 +418,7 @@ function controllerHardGate(conversation, semantic){
 
   // Remove the gap wording itself before looking for a real request.
   // This avoids treating the words "告訴我" inside "你沒告訴我" as a request.
-  const remainder=source
-    .replace(/沒(?:有)?告訴我/g,"")
-    .replace(/還沒告訴我/g,"")
-    .replace(/倒是沒(?:有)?告訴我/g,"")
-    .replace(/你倒是沒(?:有)?說/g,"")
-    .replace(/我還不知道/g,"")
-    .replace(/尚未告訴/g,"")
-    .replace(/未告訴/g,"");
-
-  const explicitRequestPattern=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
-  if(explicitRequestPattern.test(remainder)) return {status:"PASS",reasons:[]};
+  if(hasExplicitRequestBeyondInformationGap(source)) return {status:"PASS",reasons:[]};
 
   const reasons=[];
   const acts=Array.isArray(mu.acts)?mu.acts:[];
@@ -457,17 +460,7 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
   if(!gap.test(source)) return x;
 
-  const remainder=source
-    .replace(/沒(?:有)?告訴我/g,"")
-    .replace(/還沒告訴我/g,"")
-    .replace(/倒是沒(?:有)?告訴我/g,"")
-    .replace(/你倒是沒(?:有)?說/g,"")
-    .replace(/我還不知道/g,"")
-    .replace(/尚未告訴/g,"")
-    .replace(/未告訴/g,"");
-
-  const explicitRequest=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
-  if(explicitRequest.test(remainder)) return x;
+  if(hasExplicitRequestBeyondInformationGap(source)) return x;
 
   // Unified evidence boundary:
   // A bare information-gap statement does not itself prove a request,
