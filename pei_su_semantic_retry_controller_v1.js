@@ -57,6 +57,7 @@ const SYSTEM = `
 23. 資訊缺失陳述不得改名繞過規則：對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」這類句子，若沒有明確索取答案的語用證據，不只不得標成 request_*，也不得標成 indirect_request_*、implicit_request_*、hint_request_* 或任何等價的間接請求 act；response_or_action_expected 必須為 unknown，不得用 maybe 代替。
 24. 上述資訊缺失陳述的禁止範圍也包含裸標籤：implicit_request、indirect_request、request、hint_request 及任何語意等價標籤都不得使用；同時 implied_content 不得自行加入「使用者期待／希望／要求裴溯提供 X」之類未由原句明確支持的期待。若原句只有「你沒告訴我 X／X 你倒是沒說／我還不知道 X」而無真正索取答案的語用證據，應只保留資訊缺失本身，response_or_action_expected 維持 unknown。
 25. 資訊缺失陳述不得從文字欄位重新任務化：若原句只是「你沒告訴我 X／X 你倒是沒說／我還不知道 X」且沒有真正索取答案的語用證據，implied_content 與 uncertainties 都不得寫成「需補充 X」「需要／期待／希望裴溯提供 X」「存在未明確的請求」「是否需要裴溯提供 X」或任何等價說法。可以記錄的只有『X 尚未告知／目前未知』這個資訊狀態本身，不得推導成保密、故意隱瞞、承諾稍後告知或待辦。
+26. 疑問詞也可能只是資訊缺口內容而非提問：例如「你點了什麼我好像還不知道」「你把車停在哪裡我不清楚」「他叫什麼我忘了」。若疑問詞從句被「我不知道／不清楚／不記得／忘了」等知識狀態陳述包住，且沒有問號、命令、請求、催促等獨立索取證據，整句仍是 statement，不得把內嵌「什麼／哪裡／誰／多少」單獨抽成 request_information。explicit_content 應保留整個最新陳述的語義單位，不得因切出內嵌 WH 從句而反向製造詢問證據。
 26. Turn scope 硬性規則：message_understanding 中 acts、continuation_of_previous、repairs_or_reframes_previous、implied_content、user_state_or_attitude、relationship_relevance、risk、response_or_action_expected、confidence、uncertainties，必須描述「最新一則使用者訊息」。較早訊息只可用來解析指代、時間線、承接關係與既有狀態，不得把較早 turn 的 request、repeat、態度、期待或其他 act 重新列入本輪。continuation_of_previous 只比較最新使用者訊息與其緊鄰的既有對話脈絡；例如最新句「牠趴在機車坐墊上」直接承接上一個橘貓話題時應為 true，即使更早還有書籍話題。
 `;
 
@@ -363,7 +364,7 @@ function hasExplicitRequestBeyondInformationGap(source){
 
 function missingInformationBoundaryActive(conversation){
   const source=latestUserTurn(conversation).toLowerCase();
-  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|尚未告訴|未告訴)/;
+  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)[^。！？?\n]{0,80}我(?:好像|似乎|可能)?(?:還)?(?:不知道|不清楚|不記得|忘了)|尚未告訴|未告訴)/;
   if(!gapPattern.test(source)) return false;
   return !hasExplicitRequestBeyondInformationGap(source);
 }
@@ -413,7 +414,7 @@ function controllerHardGate(conversation, semantic){
 
   // Detect an information-gap statement such as:
   // "你沒告訴我 X / X 你倒是沒說 / 我還不知道 X".
-  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|尚未告訴|未告訴)/;
+  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)[^。！？?\n]{0,80}我(?:好像|似乎|可能)?(?:還)?(?:不知道|不清楚|不記得|忘了)|尚未告訴|未告訴)/;
   if(!gapPattern.test(source)) return {status:"PASS",reasons:[]};
 
   // Remove the gap wording itself before looking for a real request.
@@ -457,7 +458,7 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   const mu=x.message_understanding||{}, cc=x.conversation_context||{}, su=x.state_updates||{};
   const source=latestUserTurn(conversation).toLowerCase();
 
-  const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|尚未告訴|未告訴)/;
+  const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)[^。！？?\n]{0,80}我(?:好像|似乎|可能)?(?:還)?(?:不知道|不清楚|不記得|忘了)|尚未告訴|未告訴)/;
   if(!gap.test(source)) return x;
 
   if(hasExplicitRequestBeyondInformationGap(source)) return x;
@@ -490,6 +491,12 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   }
 
   if(!explicitRelationship) mu.relationship_relevance="low";
+  if(cc.interaction_state==="probe") cc.interaction_state="ordinary";
+
+  // Preserve the latest declarative gap statement as one whole explicit unit.
+  // Do not let an embedded WH-clause (e.g. 「你點了什麼」) get detached and
+  // reused as evidence that the user asked a standalone question.
+  mu.explicit_content=[latestUserTurn(conversation)];
 
   mu.response_or_action_expected="unknown";
 
