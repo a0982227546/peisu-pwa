@@ -374,6 +374,7 @@ function arbitrateReviewerWithHardGate(conversation, review){
 
   const source=latestUserTurn(conversation).toLowerCase();
   const explicitEmotion=/(我(?:很|真的|有點)?(?:生氣|不爽|不滿|煩|失望|不耐煩|好奇|想知道|著急)|氣死|火大|很煩|真煩|不爽|不滿|失望|不耐煩|好奇|想知道)/.test(source);
+  const explicitRelationship=/(我們(?:之間|的關係)|關係|親密|疏遠|疏離|信任|不信任|依賴|承諾|在乎我|喜歡我|討厭我|朋友|戀人|伴侶|relationship|intimacy|trust|attachment|commitment)/i.test(source);
 
   const issues=Array.isArray(review.issues)?review.issues:[];
   const kept=issues.filter(issue=>{
@@ -386,8 +387,17 @@ function arbitrateReviewerWithHardGate(conversation, review){
       "open_task","obligations","obligation_updates"
     ]);
 
-    const requestInference=/(yes|maybe|expect|request|disclos|provide|告知|提供|期待|請求|明確要求|想知道|需要回覆|需要提供)/i.test(reason);
+    const requestInference=/(yes|maybe|expect|request|question|inquir|probe|disclos|provide|告知|提供|期待|請求|詢問|探問|明確要求|想知道|需要回覆|需要提供)/i.test(reason);
+
+    // The deterministic missing-information boundary has already established
+    // that this latest turn contains no independent explicit request evidence.
+    // The reviewer may check fidelity around that result, but it may not
+    // reopen the classification by treating the embedded WH clause itself as
+    // a question/request/probe. Otherwise stochastic reviewer wording can
+    // overturn the same sanitized result for different reasons on each run.
     if(requestBoundaryFields.has(leaf) && requestInference) return false;
+    if(leaf==="acts" && /(request|question|inquir|probe|請求|詢問|探問|提問)/i.test(reason)) return false;
+    if(leaf==="response_or_action_expected") return false;
 
     // null means there is currently no open task; "none" means this turn
     // does not create/update/resolve/cancel one. These are compatible states,
@@ -411,9 +421,7 @@ function arbitrateReviewerWithHardGate(conversation, review){
     // merely because the addressee is Pei Su or because the turn is interactive.
     // Genuine relationship content remains reviewable because this exemption
     // applies only when the reviewer gives addressee/interaction as its reason.
-    if(leaf==="relationship_relevance" &&
-       /(直接.*(?:對話對象|裴溯|稱呼)|對話對象.*裴溯|雙方互動情境|至少應為\s*(?:medium|high)|direct(?:ly)?\s+(?:address|interaction)|addressee)/i.test(reason) &&
-       !/(關係本身|親密|疏離|信任|依賴|承諾|我們的關係|relationship itself|intimacy|trust|attachment|commitment)/i.test(reason)) return false;
+    if(leaf==="relationship_relevance" && !explicitRelationship) return false;
 
     return true;
   });
