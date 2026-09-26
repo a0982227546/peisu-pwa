@@ -416,6 +416,14 @@ function arbitrateReviewerWithHardGate(conversation, review){
     if(leaf==="acts" && /(request|question|inquir|probe|請求|詢問|探問|提問)/i.test(reason)) return false;
     if(leaf==="response_or_action_expected") return false;
 
+    // Schema/prompt invariant: risk uses "none" when the latest user turn
+    // contains no textual risk signal. The reviewer must not demand an
+    // unsupported "unknown" value, which is not even part of this schema's
+    // risk enum. This exemption is intentionally narrow: other risk disputes
+    // remain reviewable.
+    if(leaf==="risk" && String(issue?.value||"").toLowerCase()==="none" &&
+       /(無風險|沒有風險|未出現風險|no\s+risk|應為\s*unknown|should\s+be\s+unknown|unknown\s+而非\s+none)/i.test(reason)) return false;
+
     // null means there is currently no open task; "none" means this turn
     // does not create/update/resolve/cancel one. These are compatible states,
     // not a fidelity conflict. Do not let the reviewer reject a sanitized
