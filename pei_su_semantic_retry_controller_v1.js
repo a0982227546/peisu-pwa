@@ -347,7 +347,7 @@ function hasExplicitRequestBeyondInformationGap(source){
     .replace(/倒是沒(?:有)?告訴我/g,"")
     .replace(/你倒是沒(?:有)?說/g,"")
     .replace(/我還不知道/g,"")
-    .replace(/我(?:其實)?(?:好像|似乎|可能)?(?:一直都|一直|還)?(?:不太)?(?:知道|清楚|記得)/g,"")
+    .replace(/我(?:其實)?(?:好像|似乎|可能)?(?:一直都|一直|還)?(?:不知道|不清楚|不記得|忘了|不太知道|不太清楚|不太記得)/g,"")
     .replace(/尚未告訴/g,"")
     .replace(/未告訴/g,"");
 
@@ -365,7 +365,7 @@ function hasExplicitRequestBeyondInformationGap(source){
 
 function missingInformationBoundaryActive(conversation){
   const source=latestUserTurn(conversation).toLowerCase();
-  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|我(?:其實)?(?:好像|似乎|可能)?(?:一直都|一直|還)?(?:不太)?(?:知道|清楚|記得)[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)[^。！？?\n]{0,80}我(?:好像|似乎|可能)?(?:還)?(?:不知道|不清楚|不記得|忘了)|尚未告訴|未告訴)/;
+  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|我(?:其實)?(?:好像|似乎|可能)?(?:一直都|一直|還)?(?:不知道|不清楚|不記得|忘了|不太知道|不太清楚|不太記得)[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)[^。！？?\n]{0,80}我(?:好像|似乎|可能)?(?:還)?(?:不知道|不清楚|不記得|忘了)|尚未告訴|未告訴)/;
   if(!gapPattern.test(source)) return false;
   return !hasExplicitRequestBeyondInformationGap(source);
 }
@@ -438,14 +438,10 @@ function controllerHardGate(conversation, semantic){
   // Hard-gate the latest user turn only. Earlier turns are context, not the current act.
   const source=latestUserTurn(conversation).toLowerCase();
 
-  // Detect an information-gap statement such as:
-  // "你沒告訴我 X / X 你倒是沒說 / 我還不知道 X".
-  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|我(?:其實)?(?:好像|似乎|可能)?(?:一直都|一直|還)?(?:不太)?(?:知道|清楚|記得)[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)[^。！？?\n]{0,80}我(?:好像|似乎|可能)?(?:還)?(?:不知道|不清楚|不記得|忘了)|尚未告訴|未告訴)/;
-  if(!gapPattern.test(source)) return {status:"PASS",reasons:[]};
-
-  // Remove the gap wording itself before looking for a real request.
-  // This avoids treating the words "告訴我" inside "你沒告訴我" as a request.
-  if(hasExplicitRequestBeyondInformationGap(source)) return {status:"PASS",reasons:[]};
+  // Use the one canonical missing-information boundary for every hard-gate path.
+  // Do not keep a second regex here: duplicated coverage previously let the
+  // first-pass path disagree with the sanitizer/reviewer path.
+  if(!missingInformationBoundaryActive(conversation)) return {status:"PASS",reasons:[]};
 
   const reasons=[];
   const acts=Array.isArray(mu.acts)?mu.acts:[];
