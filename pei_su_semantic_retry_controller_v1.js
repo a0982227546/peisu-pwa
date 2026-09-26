@@ -405,6 +405,16 @@ function arbitrateReviewerWithHardGate(conversation, review){
     if(!explicitEmotion && leaf==="acts" &&
        /(不滿|失望|沮喪|不耐煩|抱怨|好奇|curious|annoy|dissatisf|impatient|frustrat|disappoint)/i.test(reason)) return false;
 
+    // Directly addressing Pei Su is ordinary chat context, not independent
+    // evidence that the utterance is about the relationship itself. For a
+    // sanitized missing-information statement, do not force low -> medium/high
+    // merely because the addressee is Pei Su or because the turn is interactive.
+    // Genuine relationship content remains reviewable because this exemption
+    // applies only when the reviewer gives addressee/interaction as its reason.
+    if(leaf==="relationship_relevance" &&
+       /(直接.*(?:對話對象|裴溯|稱呼)|對話對象.*裴溯|雙方互動情境|至少應為\s*(?:medium|high)|direct(?:ly)?\s+(?:address|interaction)|addressee)/i.test(reason) &&
+       !/(關係本身|親密|疏離|信任|依賴|承諾|我們的關係|relationship itself|intimacy|trust|attachment|commitment)/i.test(reason)) return false;
+
     return true;
   });
 
