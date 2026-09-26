@@ -398,7 +398,7 @@ function arbitrateReviewerWithHardGate(conversation, review){
       "open_task","obligations","obligation_updates"
     ]);
 
-    const requestInference=/(yes|maybe|expect|request|question|inquir|probe|disclos|provide|告知|提供|期待|請求|詢問|探問|明確要求|想知道|需要回覆|需要提供)/i.test(reason);
+    const requestInference=/(yes|maybe|expect|request|question|inquir|probe|disclos|provide|wants?\s+to\s+know|want(?:s|ed)?[^.。！？\n]{0,30}know|告知|提供|期待|請求|詢問|探問|明確要求|想知道|想了解|需要回覆|需要提供)/i.test(reason);
 
     // Structural invariant: the first user turn cannot continue a previous
     // user topic because no previous user turn exists. A reviewer may not
