@@ -514,9 +514,46 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   return x;
 }
 
+function explicitContentCompletenessGate(conversation, semantic){
+  const source=latestUserTurn(conversation).trim();
+  const mu=semantic?.message_understanding||{};
+  const explicit=Array.isArray(mu.explicit_content)?mu.explicit_content:[];
+
+  // Narrow completeness guard only. Do not generate or rewrite semantic content.
+  // Very short acknowledgements / reaction-only turns may legitimately carry no
+  // explicit proposition, so they are excluded from this hard gate.
+  const normalized=source
+    .replace(/[\s，。！？!?、；;：:\-—…~～「」『』（）()【】\[\]"'`]/g,"")
+    .toLowerCase();
+  const reactionOnly=new Set([
+    "嗯","恩","喔","哦","好","好的","對","是","嗯嗯","哈哈","呵呵",
+    "ok","okay","lol","xd","qq"
+  ]);
+  const substantive=normalized.length>=3 && !reactionOnly.has(normalized);
+
+  if(substantive && explicit.length===0){
+    return {
+      status:"RETRY",
+      reasons:["controller_explicit_content_gate: 最新使用者訊息含有實質明說內容，但 explicit_content 為空；請重新判讀最新 turn，且不得由 controller 自行補寫內容"]
+    };
+  }
+  return {status:"PASS",reasons:[]};
+}
+
 function applyControllerHardGate(conversation, semantic, validation){
   if(validation?.status==="RETRY") return validation;
   const clean=validation?.semantic||semantic;
+
+  const explicitGate=explicitContentCompletenessGate(conversation,clean);
+  if(explicitGate.status==="RETRY"){
+    return {
+      status:"RETRY",
+      reasons:explicitGate.reasons,
+      semantic:clean,
+      controller_explicit_content_gate:"RETRY"
+    };
+  }
+
   const gate=controllerHardGate(conversation,clean);
   if(gate.status==="RETRY"){
     return {
