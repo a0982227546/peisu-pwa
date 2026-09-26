@@ -340,6 +340,16 @@ function latestUserTurn(conversation){
   return String(conversation||"").trim();
 }
 
+function hasPreviousUserTurn(conversation){
+  const lines=String(conversation||"").split(/\r?\n/);
+  let count=0;
+  for(const raw of lines){
+    if(/^(?:使用者|user)\s*[：:]/i.test(raw.trim())) count++;
+    if(count>=2) return true;
+  }
+  return false;
+}
+
 function hasExplicitRequestBeyondInformationGap(source){
   const remainder=String(source||"")
     .replace(/沒(?:有)?告訴我/g,"")
@@ -389,6 +399,12 @@ function arbitrateReviewerWithHardGate(conversation, review){
     ]);
 
     const requestInference=/(yes|maybe|expect|request|question|inquir|probe|disclos|provide|告知|提供|期待|請求|詢問|探問|明確要求|想知道|需要回覆|需要提供)/i.test(reason);
+
+    // Structural invariant: the first user turn cannot continue a previous
+    // user topic because no previous user turn exists. A reviewer may not
+    // invent missing history and force continuation_of_previous=true.
+    if(leaf==="continuation_of_previous" && !hasPreviousUserTurn(conversation) &&
+       (String(issue?.value||"").toLowerCase()==="true" || /應標為\s*true|should\s+be\s+true|延續上一次|延續上一/i.test(reason))) return false;
 
     // The deterministic missing-information boundary has already established
     // that this latest turn contains no independent explicit request evidence.
