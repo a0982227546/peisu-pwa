@@ -469,14 +469,19 @@ function hasDeterministicOldTopicReturnAnchor(conversation){
   const latest=userTurns[userTurns.length-1];
   const previous=userTurns[userTurns.length-2];
   const older=userTurns.slice(0,-2).join("\n");
+  const lines=String(conversation||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  const latestUserLineIndex=lines.map((line,i)=>({line,i})).filter(x=>/^(?:使用者|user)\s*[：:]/i.test(x.line)).pop()?.i ?? -1;
+  const immediatelyPreviousAssistant=latestUserLineIndex>0 && /^(?:裴溯|assistant)\s*[：:]/i.test(lines[latestUserLineIndex-1])
+    ? lines[latestUserLineIndex-1].replace(/^(?:裴溯|assistant)\s*[：:]\s*/i,"")
+    : "";
 
-  // This is deliberately lexical, not semantic: it only establishes that the
-  // latest turn explicitly reuses a concrete phrase from an older user turn
-  // that is absent from the immediately previous user turn. That is sufficient
-  // to stop Reviewer from rewriting an already-false continuation merely
-  // because the referenced topic exists somewhere in history.
+  // Deliberately lexical and narrow. The latest turn must reuse a concrete
+  // phrase from an older user turn, while that phrase is absent from BOTH the
+  // immediately previous user turn and the immediately previous assistant
+  // turn. This distinguishes "return to an older topic" from a real direct
+  // continuation introduced by either side on the immediately preceding turn.
   const compact=s=>String(s||"").replace(/\s+/g,"");
-  const a=compact(latest), b=compact(previous), c=compact(older);
+  const a=compact(latest), b=compact(previous), d=compact(immediatelyPreviousAssistant), c=compact(older);
   const stopFragments=["今天","剛剛","什麼","怎麼","這個","那個","時候","是不是","有沒有","可以","知道","記得","回家","路上"];
   const seen=new Set();
 
@@ -487,10 +492,28 @@ function hasDeterministicOldTopicReturnAnchor(conversation){
       seen.add(term);
       if(!/^[\p{Script=Han}A-Za-z0-9]+$/u.test(term)) continue;
       if(stopFragments.some(x=>term.includes(x))) continue;
-      if(c.includes(term) && !b.includes(term)) return true;
+      if(c.includes(term) && !b.includes(term) && !d.includes(term)) return true;
     }
   }
   return false;
+}
+
+
+function normalizeOldTopicReturnContinuation(conversation, semantic){
+  if(!semantic || typeof semantic!=="object") return semantic;
+  if(!hasDeterministicOldTopicReturnAnchor(conversation)) return semantic;
+  if(!semantic.message_understanding || semantic.message_understanding.continuation_of_previous!==true) return semantic;
+
+  // Existing locked spec: direct continuation means the immediately preceding
+  // topic/action. A deterministic old-topic return is therefore false. Change
+  // this field only; preserve every other Semantic field verbatim.
+  return {
+    ...semantic,
+    message_understanding:{
+      ...semantic.message_understanding,
+      continuation_of_previous:false
+    }
+  };
 }
 
 function arbitrateReviewerOldTopicReturn(conversation, semantic, review){
@@ -769,7 +792,7 @@ export default {
         const reasons=firstValidation.reasons||[];
         const secondSemanticRaw=await runNano(env,conversation,reasons); // API call #2
         const secondSemantic=preserveAcceptedUserReminder(conversation,secondSemanticRaw);
-        const sanitizedSecondSemantic=preserveAcceptedUserReminder(conversation,sanitizeMissingInformationSemantic(conversation,secondSemantic));
+        const sanitizedSecondSemantic=normalizeOldTopicReturnContinuation(conversation,preserveAcceptedUserReminder(conversation,sanitizeMissingInformationSemantic(conversation,secondSemantic)));
         let secondValidation=await validate(env,conversation,sanitizedSecondSemantic);
         // Validator judges the sanitized candidate; on PASS it must not replace
         // that candidate with a rewritten/raw semantic payload.
@@ -857,7 +880,7 @@ export default {
         },{headers:cors});
       }
 
-      const firstClean=firstValidation.semantic;
+      const firstClean=normalizeOldTopicReturnContinuation(conversation,firstValidation.semantic);
 
       // No added/inferred semantics: skip the AI reviewer entirely.
       if(!needsSemanticReview(firstClean)){
@@ -902,7 +925,7 @@ export default {
       // API call #3: one and only semantic regeneration.
       const retryReasons=reviewerReasons(firstReview);
       const secondSemantic=await runNano(env,conversation,retryReasons);
-      const sanitizedSecondSemantic=sanitizeMissingInformationSemantic(conversation,secondSemantic);
+      const sanitizedSecondSemantic=normalizeOldTopicReturnContinuation(conversation,sanitizeMissingInformationSemantic(conversation,secondSemantic));
       let secondValidation=await validate(env,conversation,sanitizedSecondSemantic);
       // Validator judges the sanitized candidate; on PASS it must not replace
       // that candidate with a rewritten/raw semantic payload.
