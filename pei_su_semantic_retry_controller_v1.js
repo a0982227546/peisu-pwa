@@ -357,18 +357,36 @@ function missingInformationBoundaryActive(conversation){
 
 function arbitrateReviewerWithHardGate(conversation, review){
   if(!missingInformationBoundaryActive(conversation) || review?.status!=="RETRY") return review;
+
+  const source=latestUserTurn(conversation).toLowerCase();
+  const explicitEmotion=/(我(?:很|真的|有點)?(?:生氣|不爽|不滿|煩|失望|不耐煩|好奇|想知道|著急)|氣死|火大|很煩|真煩|不爽|不滿|失望|不耐煩|好奇|想知道)/.test(source);
+
   const issues=Array.isArray(review.issues)?review.issues:[];
   const kept=issues.filter(issue=>{
     const field=String(issue?.field||"");
     const reason=String(issue?.reason||"");
-    const isExpected=field==="response_or_action_expected" || field.endsWith(".response_or_action_expected");
-    const isActs=field==="acts" || field.endsWith(".acts");
-    const isImplied=field==="implied_content" || field.endsWith(".implied_content");
-    const isAttitude=field==="user_state_or_attitude" || field.endsWith(".user_state_or_attitude");
-    const requestInference=/(yes|maybe|expect|request|disclos|provide|告知|提供|期待|請求|明確要求|想知道)/i.test(reason);
-    if((isExpected||isActs||isImplied||isAttitude) && requestInference) return false;
+
+    const leaf=field.split(".").pop();
+    const requestBoundaryFields=new Set([
+      "acts","implied_content","response_or_action_expected","uncertainties",
+      "open_task","obligations","obligation_updates"
+    ]);
+
+    const requestInference=/(yes|maybe|expect|request|disclos|provide|告知|提供|期待|請求|明確要求|想知道|需要回覆|需要提供)/i.test(reason);
+    if(requestBoundaryFields.has(leaf) && requestInference) return false;
+
+    // Reviewer may not recreate an emotion solely because another candidate
+    // field previously hallucinated that emotion. Require lexical evidence
+    // from the latest user turn itself.
+    if(!explicitEmotion && leaf==="user_state_or_attitude" &&
+       /(不滿|失望|沮喪|不耐煩|抱怨|好奇|curious|annoy|dissatisf|impatient|frustrat|disappoint|acts.*情緒)/i.test(reason)) return false;
+
+    if(!explicitEmotion && leaf==="acts" &&
+       /(不滿|失望|沮喪|不耐煩|抱怨|好奇|curious|annoy|dissatisf|impatient|frustrat|disappoint)/i.test(reason)) return false;
+
     return true;
   });
+
   return kept.length ? {status:"RETRY",issues:kept} : {status:"PASS",issues:[]};
 }
 
@@ -434,33 +452,65 @@ function controllerHardGate(conversation, semantic){
 function sanitizeMissingInformationSemantic(conversation, semantic){
   const x=JSON.parse(JSON.stringify(semantic||{}));
   const mu=x.message_understanding||{}, cc=x.conversation_context||{}, su=x.state_updates||{};
-  // Sanitize only when the latest user turn itself is an information-gap statement.
   const source=latestUserTurn(conversation).toLowerCase();
+
   const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
   if(!gap.test(source)) return x;
-  const remainder=source.replace(/沒(?:有)?告訴我|還沒告訴我|倒是沒(?:有)?告訴我|你倒是沒(?:有)?說|我還不知道|尚未告訴|未告訴/g,"");
-  const request=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
-  if(request.test(remainder)) return x;
 
-  mu.acts=(Array.isArray(mu.acts)?mu.acts:[]).filter(v=>!/(request|expect|demand|ask|complain_about_missing_information|索取|要求|期待)/i.test(String(v)));
+  const remainder=source
+    .replace(/沒(?:有)?告訴我/g,"")
+    .replace(/還沒告訴我/g,"")
+    .replace(/倒是沒(?:有)?告訴我/g,"")
+    .replace(/你倒是沒(?:有)?說/g,"")
+    .replace(/我還不知道/g,"")
+    .replace(/尚未告訴/g,"")
+    .replace(/未告訴/g,"");
+
+  const explicitRequest=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
+  if(explicitRequest.test(remainder)) return x;
+
+  // Unified evidence boundary:
+  // A bare information-gap statement does not itself prove a request,
+  // response expectation, dissatisfaction, impatience, curiosity, or
+  // relationship significance. These meanings require independent lexical
+  // evidence in the latest user turn.
+  const explicitEmotion=/(我(?:很|真的|有點)?(?:生氣|不爽|不滿|煩|失望|不耐煩|好奇|想知道|著急)|氣死|火大|很煩|真煩|不爽|不滿|失望|不耐煩|好奇|想知道)/.test(source);
+  const explicitRelationship=/(我們(?:的)?關係|你跟我|我跟你|信任|親近|疏遠|承諾|我們之間|彼此)/.test(source);
+
+  const requestLike=/(request|expect|demand|ask|索取|要求|期待)/i;
+  const unsupportedEmotionAct=/(dissatisf|complain|annoy|impatient|frustrat|disappoint|curious|不滿|抱怨|不耐煩|失望|好奇)/i;
+
+  mu.acts=(Array.isArray(mu.acts)?mu.acts:[]).filter(v=>{
+    const s=String(v);
+    if(requestLike.test(s)) return false;
+    if(!explicitEmotion && unsupportedEmotionAct.test(s)) return false;
+    return true;
+  });
   if(!mu.acts.length) mu.acts=["statement","note_missing_information"];
 
-  // Do not let the same unsupported request inference leak sideways into attitude
-  // or relationship strength. Preserve only attitudes with explicit lexical evidence.
-  const explicitAttitudeEvidence=/(生氣|不爽|不滿|煩|討厭|好奇|想知道|急|失望|不耐煩|氣死|火大)/.test(source);
-  if(!explicitAttitudeEvidence){
-    mu.user_state_or_attitude=(Array.isArray(mu.user_state_or_attitude)?mu.user_state_or_attitude:[])
-      .filter(v=>!/(期待|期望|希望|想知道|curious|impatient|不滿|抱怨|complain|expect)/i.test(String(v)));
-  }
-  const explicitRelationshipEvidence=/(我們(?:的)?關係|你跟我|我跟你|信任|親近|疏遠|承諾|我們之間|彼此)/.test(source);
-  if(!explicitRelationshipEvidence) mu.relationship_relevance="low";
+  mu.implied_content=(Array.isArray(mu.implied_content)?mu.implied_content:[])
+    .filter(v=>!/(期待|期望|希望|想要|想知道|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖|request|expect|provide|disclos)/i.test(String(v)));
 
-  mu.implied_content=(Array.isArray(mu.implied_content)?mu.implied_content:[]).filter(v=>!/(期待|期望|希望|想要|想知道|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(v)));
-  mu.uncertainties=(Array.isArray(mu.uncertainties)?mu.uncertainties:[]).filter(v=>!/(請求|期待|期望|希望|想要|需要|要求|索取|提供|告知|意圖)/.test(String(v)));
+  if(!explicitEmotion){
+    mu.user_state_or_attitude=(Array.isArray(mu.user_state_or_attitude)?mu.user_state_or_attitude:[])
+      .filter(v=>!/(期待|期望|希望|想知道|curious|impatient|annoy|dissatisf|frustrat|disappoint|不滿|抱怨|不耐煩|失望|好奇|expect)/i.test(String(v)));
+  }
+
+  if(!explicitRelationship) mu.relationship_relevance="low";
+
   mu.response_or_action_expected="unknown";
-  cc.open_task=null; cc.obligations=[];
-  su.open_task="none"; su.obligation_updates=[];
-  x.message_understanding=mu; x.conversation_context=cc; x.state_updates=su;
+
+  mu.uncertainties=(Array.isArray(mu.uncertainties)?mu.uncertainties:[])
+    .filter(v=>!/(請求|期待|期望|希望|想要|想知道|需要|要求|索取|提供|告知|意圖|request|expect|provide|disclos)/i.test(String(v)));
+
+  cc.open_task=null;
+  cc.obligations=[];
+  su.open_task="none";
+  su.obligation_updates=[];
+
+  x.message_understanding=mu;
+  x.conversation_context=cc;
+  x.state_updates=su;
   return x;
 }
 
