@@ -484,10 +484,9 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   const mu=x.message_understanding||{}, cc=x.conversation_context||{}, su=x.state_updates||{};
   const source=latestUserTurn(conversation).toLowerCase();
 
-  const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|我不知道[^。！？?\n]{0,80}(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)|(?:是什麼|叫什麼|什麼(?:口味|名字|名稱|顏色|內容|型號|時間|原因|地方|東西)?|哪(?:個|一|裡|邊|家|本|種)?|誰|多少|幾)[^。！？?\n]{0,80}我(?:好像|似乎|可能)?(?:還)?(?:不知道|不清楚|不記得|忘了)|尚未告訴|未告訴)/;
-  if(!gap.test(source)) return x;
-
-  if(hasExplicitRequestBeyondInformationGap(source)) return x;
+  // Single source of truth: use the same deterministic boundary as the hard gate/reviewer.
+  // Do not maintain a second regex here; otherwise coverage can drift between detection and sanitization.
+  if(!missingInformationBoundaryActive(conversation)) return x;
 
   // Unified evidence boundary:
   // A bare information-gap statement does not itself prove a request,
