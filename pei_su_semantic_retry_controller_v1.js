@@ -339,6 +339,40 @@ function latestUserTurn(conversation){
   return String(conversation||"").trim();
 }
 
+function missingInformationBoundaryActive(conversation){
+  const source=latestUserTurn(conversation).toLowerCase();
+  const gapPattern=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
+  if(!gapPattern.test(source)) return false;
+  const remainder=source
+    .replace(/沒(?:有)?告訴我/g,"")
+    .replace(/還沒告訴我/g,"")
+    .replace(/倒是沒(?:有)?告訴我/g,"")
+    .replace(/你倒是沒(?:有)?說/g,"")
+    .replace(/我還不知道/g,"")
+    .replace(/尚未告訴/g,"")
+    .replace(/未告訴/g,"");
+  const explicitRequestPattern=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
+  return !explicitRequestPattern.test(remainder);
+}
+
+function arbitrateReviewerWithHardGate(conversation, review){
+  if(!missingInformationBoundaryActive(conversation) || review?.status!=="RETRY") return review;
+  const issues=Array.isArray(review.issues)?review.issues:[];
+  const kept=issues.filter(issue=>{
+    const field=String(issue?.field||"");
+    const reason=String(issue?.reason||"");
+    // The deterministic missing-information boundary has already decided that
+    // this latest turn is not an explicit request. Reviewer may still audit all
+    // unrelated fields, but may not re-create request/expectation semantics.
+    if(field.includes("message_understanding.response_or_action_expected") &&
+       /(should be ['\"]?(?:yes|maybe)|expects?|expected|implicitly requests?|request|disclos|provide|告知|提供|期待|請求)/i.test(reason)) return false;
+    if(field.includes("message_understanding.acts") &&
+       /(implicit(?:ly)? request|request|expect|disclos|provide|告知|提供|期待|請求)/i.test(reason)) return false;
+    return true;
+  });
+  return kept.length ? {status:"RETRY",issues:kept} : {status:"PASS",issues:[]};
+}
+
 function controllerHardGate(conversation, semantic){
   const cc=semantic?.conversation_context||{};
   const mu=semantic?.message_understanding||{};
@@ -409,8 +443,19 @@ function sanitizeMissingInformationSemantic(conversation, semantic){
   const request=/(請|麻煩|告訴我|跟我說|說一下|說給我聽|能不能|可不可以|可以告訴|是什麼[？?]?|叫什麼[？?]?|快說|現在說|回答我)/;
   if(request.test(remainder)) return x;
 
-  mu.acts=(Array.isArray(mu.acts)?mu.acts:[]).filter(v=>!/(request|expect|demand|ask|索取|要求|期待)/i.test(String(v)));
+  mu.acts=(Array.isArray(mu.acts)?mu.acts:[]).filter(v=>!/(request|expect|demand|ask|complain_about_missing_information|索取|要求|期待)/i.test(String(v)));
   if(!mu.acts.length) mu.acts=["statement","note_missing_information"];
+
+  // Do not let the same unsupported request inference leak sideways into attitude
+  // or relationship strength. Preserve only attitudes with explicit lexical evidence.
+  const explicitAttitudeEvidence=/(生氣|不爽|不滿|煩|討厭|好奇|想知道|急|失望|不耐煩|氣死|火大)/.test(source);
+  if(!explicitAttitudeEvidence){
+    mu.user_state_or_attitude=(Array.isArray(mu.user_state_or_attitude)?mu.user_state_or_attitude:[])
+      .filter(v=>!/(期待|期望|希望|想知道|curious|impatient|不滿|抱怨|complain|expect)/i.test(String(v)));
+  }
+  const explicitRelationshipEvidence=/(我們(?:的)?關係|你跟我|我跟你|信任|親近|疏遠|承諾|我們之間|彼此)/.test(source);
+  if(!explicitRelationshipEvidence) mu.relationship_relevance="low";
+
   mu.implied_content=(Array.isArray(mu.implied_content)?mu.implied_content:[]).filter(v=>!/(期待|期望|希望|想要|需要|需補充|要求|索取|提供|告知.*需求|待.*告知|意圖)/.test(String(v)));
   mu.uncertainties=(Array.isArray(mu.uncertainties)?mu.uncertainties:[]).filter(v=>!/(請求|期待|期望|希望|想要|需要|要求|索取|提供|告知|意圖)/.test(String(v)));
   mu.response_or_action_expected="unknown";
@@ -485,7 +530,8 @@ export default {
         // After a mechanical-validator retry, the regenerated semantic must still
         // pass the same semantic-fidelity gate. This is API call #3 at most.
         if(needsSemanticReview(secondClean)){
-          const secondReview=await reviewSemantic(env,conversation,secondClean); // API call #3
+          let secondReview=await reviewSemantic(env,conversation,secondClean); // API call #3
+          secondReview=arbitrateReviewerWithHardGate(conversation,secondReview);
 
           if(secondReview.status==="RETRY"){
             return Response.json({
@@ -562,7 +608,8 @@ export default {
       }
 
       // API call #2: fidelity reviewer. It can only PASS or request one RETRY.
-      const firstReview=await reviewSemantic(env,conversation,firstClean);
+      let firstReview=await reviewSemantic(env,conversation,firstClean);
+      firstReview=arbitrateReviewerWithHardGate(conversation,firstReview);
 
       if(firstReview.status==="PASS"){
         return Response.json({
