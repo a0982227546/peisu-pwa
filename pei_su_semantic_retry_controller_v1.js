@@ -54,6 +54,8 @@ const SYSTEM = `
 20. 不得把未知空白改寫成潛在任務。例如「忘了帶錢包」不自動推出使用者可能需要解決方案、協助付款、找錢包或建議；若原文沒有提出，current_topic、uncertainties、open_task 與 implied_content 都不要補。
 21. 「你沒告訴我 X」「X 你倒是沒說」「我還不知道 X」首先是對資訊缺失的陳述，不等於索取該資訊。除非同一句或直接上下文明確出現「告訴我／說一下／是什麼／叫什麼／能不能告訴我」等提問、命令、請求或催促證據，acts 不得標成 request_*，response_or_action_expected 不得因此填 yes，open_task 不得因此建立或 update，uncertainties 也不得寫成「需對方提供 X」。
 22. conversation_context.open_task 與 state_updates.open_task 必須語意一致：若本輪沒有明確建立、修改或取消任務，conversation_context.open_task 應為 null，state_updates.open_task 應為 none；不得出現上方 null、下方 update 的矛盾。
+22A. 已被對話對象明確接受、但尚未完成或取消的「使用者明確提醒請求」屬於既有對話待辦狀態；使用者之後換話題，不得因此把它清成不存在。若提醒時間尚未確定，只能保留為「待確認時間／尚未排程」的 pending conversational obligation，不得宣稱已建立外部排程、背景通知或系統提醒。
+22B. 只有使用者自己明確提出的提醒請求，且後續有對話對象明確接受證據，才能依 22A 延續。對話對象自己提出的問句、玩笑、交換條件、建議或自創 hook，不得因此形成 obligation。
 23. 資訊缺失陳述不得改名繞過規則：對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」這類句子，若沒有明確索取答案的語用證據，不只不得標成 request_*，也不得標成 indirect_request_*、implicit_request_*、hint_request_* 或任何等價的間接請求 act；response_or_action_expected 必須為 unknown，不得用 maybe 代替。
 24. 上述資訊缺失陳述的禁止範圍也包含裸標籤：implicit_request、indirect_request、request、hint_request 及任何語意等價標籤都不得使用；同時 implied_content 不得自行加入「使用者期待／希望／要求裴溯提供 X」之類未由原句明確支持的期待。若原句只有「你沒告訴我 X／X 你倒是沒說／我還不知道 X」而無真正索取答案的語用證據，應只保留資訊缺失本身，response_or_action_expected 維持 unknown。
 25. 資訊缺失陳述不得從文字欄位重新任務化：若原句只是「你沒告訴我 X／X 你倒是沒說／我還不知道 X」且沒有真正索取答案的語用證據，implied_content 與 uncertainties 都不得寫成「需補充 X」「需要／期待／希望裴溯提供 X」「存在未明確的請求」「是否需要裴溯提供 X」或任何等價說法。可以記錄的只有『X 尚未告知／目前未知』這個資訊狀態本身，不得推導成保密、故意隱瞞、承諾稍後告知或待辦。
@@ -233,6 +235,8 @@ const REVIEWER_SYSTEM = `
    若候選為 yes / maybe / no 而原文不足以支持該值，必須 RETRY，應讓重新判讀有機會改為 unknown；不可替使用者猜。
 5. 檢查其他需要推導才成立的狀態、義務、偏好、風險或互動意義。若候選把使用者的局部界線擴張成一般偏好、把當下情緒擴張成另一種狀態、或加入回覆策略，均視為缺乏證據。
 6. 特別檢查 conversation_context.obligations 與 state_updates.obligation_updates：使用者「提出／修改／取消一個要求」不等於系統已承諾或已具備執行能力。若內容把條件式要求升格成已建立的背景監控、在線偵測、排程、通知或其他技術義務，必須 RETRY。只有已有明確系統確認／能力狀態支持時，才可形成可執行 obligation。
+6A. 但若原始對話中可直接看到：使用者先明確提出「提醒我 X」的請求，之後對話對象明確接受（例如「行／好／可以」並詢問提醒時間），而 X 尚未完成、取消或撤回，則後續換話題時保留「已接受、待確認時間／尚未排程」的對話待辦有直接歷史證據，不得僅因最新 turn 換題而要求刪除。這不等於外部排程已建立。
+6B. 上述保留只適用於使用者明確提出且被接受的請求；對話對象自己拋出的問題、玩笑、建議或 hook 不能套用。
 7. relationship_relevance 只評估「原文與使用者－目前對話對象之間的互動／關係本身」的相關程度。第三人關係不是這個欄位：主管、同事、朋友、家人、伴侶等只要是被談論的第三人，都不能單憑其存在提高 relationship_relevance。若原文只是在抱怨主管、描述朋友或家人的事情，而沒有談到使用者與目前對話對象的關係，high / medium 應 RETRY。
 8. risk 必須有原文風險訊號支持；一般煩躁、抱怨、疲累或資訊不足不能支持 low。無風險訊號而候選不是 none，RETRY。
 9. uncertainties 只能保留原文真實歧義，不能自行生成未表達的可能需求（例如安慰、支持、建議、陪伴）或回覆策略；若只是把 response_or_action_expected=unknown 換句話重複並額外擴張需求，也應 RETRY。
@@ -454,6 +458,76 @@ function arbitrateReviewerWithHardGate(conversation, review){
   return kept.length ? {status:"RETRY",issues:kept} : {status:"PASS",issues:[]};
 }
 
+function acceptedPendingReminder(conversation){
+  const lines=String(conversation||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  let pending=null;
+
+  for(let i=0;i<lines.length;i++){
+    const um=lines[i].match(/^(?:使用者|user)\s*[：:]\s*(.*)$/i);
+    if(!um) continue;
+    const userText=um[1].trim();
+
+    // Narrow reproduced case only: an explicit user-authored reminder request.
+    // Do not generalize ordinary questions/statements into obligations.
+    const rm=userText.match(/(?:記得)?提醒我(.+)/);
+    if(rm && /(提醒我)/.test(userText)){
+      const task=rm[1].replace(/[。！？!?]+$/g,"").trim();
+      pending={task,accepted:false,cancelled:false,completed:false};
+      continue;
+    }
+
+    if(pending){
+      // Explicit cancellation/withdrawal by the user ends this pending reminder.
+      if(/(?:不用|不要|取消|算了|別)(?:再)?提醒|提醒.*(?:不用|取消|算了)/.test(userText)) pending.cancelled=true;
+      // Explicit completion of the requested task ends it. Keep this deliberately
+      // narrow so unrelated topic shifts cannot accidentally resolve the task.
+      if(pending.task && /(?:已經|剛剛|我把|我已).*(?:收進來|收好了|收完|完成)/.test(userText)) pending.completed=true;
+    }
+  }
+
+  // Acceptance is evidence from Pei/assistant after the user's request. We scan
+  // from the request onward and require explicit acceptance language, not merely
+  // an assistant-authored question/hook.
+  if(pending && !pending.cancelled && !pending.completed){
+    const requestNeedle="提醒我";
+    let seenRequest=false;
+    for(const line of lines){
+      const um=line.match(/^(?:使用者|user)\s*[：:]\s*(.*)$/i);
+      if(um && um[1].includes(requestNeedle)) { seenRequest=true; continue; }
+      if(!seenRequest) continue;
+      const am=line.match(/^(?:裴溯|assistant)\s*[：:]\s*(.*)$/i);
+      if(am && /^(?:行|好|可以|知道了|記得|沒問題)(?:[。！!，,\s]|$)/.test(am[1].trim())){
+        pending.accepted=true;
+        break;
+      }
+    }
+  }
+  return pending && pending.accepted && !pending.cancelled && !pending.completed ? pending : null;
+}
+
+function preserveAcceptedUserReminder(conversation, semantic){
+  const pending=acceptedPendingReminder(conversation);
+  if(!pending) return semantic;
+
+  const x=JSON.parse(JSON.stringify(semantic||{}));
+  const cc=x.conversation_context||{};
+  const su=x.state_updates||{};
+  const label=`提醒使用者${pending.task}（已接受；提醒時間尚待確認／尚未排程）`;
+
+  // This is persistence of an already evidenced user-created obligation, not a
+  // new inference from the latest unrelated turn.
+  cc.open_task={};
+  cc.obligations=Array.from(new Set([...(Array.isArray(cc.obligations)?cc.obligations:[]),label]));
+  su.open_task="keep";
+  // No new obligation is created on this turn; preserve state without emitting
+  // a fresh obligation_update.
+  su.obligation_updates=Array.isArray(su.obligation_updates)?su.obligation_updates:[];
+
+  x.conversation_context=cc;
+  x.state_updates=su;
+  return x;
+}
+
 function controllerHardGate(conversation, semantic){
   const cc=semantic?.conversation_context||{};
   const mu=semantic?.message_understanding||{};
@@ -627,15 +701,17 @@ export default {
         return Response.json({error:"conversation required"},{status:400,headers:cors});
 
       // API call #1: first semantic understanding.
-      const firstSemantic=await runNano(env,conversation);
+      const firstSemanticRaw=await runNano(env,conversation);
+      const firstSemantic=preserveAcceptedUserReminder(conversation,firstSemanticRaw);
       let firstValidation=await validate(env,conversation,firstSemantic);
       firstValidation=applyControllerHardGate(conversation,firstSemantic,firstValidation);
 
       // Mechanical validator RETRY goes directly to the one allowed regeneration.
       if(firstValidation.status==="RETRY"){
         const reasons=firstValidation.reasons||[];
-        const secondSemantic=await runNano(env,conversation,reasons); // API call #2
-        const sanitizedSecondSemantic=sanitizeMissingInformationSemantic(conversation,secondSemantic);
+        const secondSemanticRaw=await runNano(env,conversation,reasons); // API call #2
+        const secondSemantic=preserveAcceptedUserReminder(conversation,secondSemanticRaw);
+        const sanitizedSecondSemantic=preserveAcceptedUserReminder(conversation,sanitizeMissingInformationSemantic(conversation,secondSemantic));
         let secondValidation=await validate(env,conversation,sanitizedSecondSemantic);
         // Validator judges the sanitized candidate; on PASS it must not replace
         // that candidate with a rewritten/raw semantic payload.
