@@ -458,6 +458,64 @@ function arbitrateReviewerWithHardGate(conversation, review){
   return kept.length ? {status:"RETRY",issues:kept} : {status:"PASS",issues:[]};
 }
 
+
+function hasDeterministicOldTopicReturnAnchor(conversation){
+  const userTurns=String(conversation||"").split(/\r?\n/)
+    .map(line=>line.trim().match(/^(?:使用者|user)\s*[：:]\s*(.*)$/i))
+    .filter(Boolean).map(m=>m[1].trim());
+
+  if(userTurns.length<3) return false;
+
+  const latest=userTurns[userTurns.length-1];
+  const previous=userTurns[userTurns.length-2];
+  const older=userTurns.slice(0,-2).join("\n");
+
+  // This is deliberately lexical, not semantic: it only establishes that the
+  // latest turn explicitly reuses a concrete phrase from an older user turn
+  // that is absent from the immediately previous user turn. That is sufficient
+  // to stop Reviewer from rewriting an already-false continuation merely
+  // because the referenced topic exists somewhere in history.
+  const compact=s=>String(s||"").replace(/\s+/g,"");
+  const a=compact(latest), b=compact(previous), c=compact(older);
+  const stopFragments=["今天","剛剛","什麼","怎麼","這個","那個","時候","是不是","有沒有","可以","知道","記得","回家","路上"];
+  const seen=new Set();
+
+  for(let n=6;n>=3;n--){
+    for(let i=0;i+n<=a.length;i++){
+      const term=a.slice(i,i+n);
+      if(seen.has(term)) continue;
+      seen.add(term);
+      if(!/^[\p{Script=Han}A-Za-z0-9]+$/u.test(term)) continue;
+      if(stopFragments.some(x=>term.includes(x))) continue;
+      if(c.includes(term) && !b.includes(term)) return true;
+    }
+  }
+  return false;
+}
+
+function arbitrateReviewerOldTopicReturn(conversation, semantic, review){
+  if(review?.status!=="RETRY") return review;
+  if(semantic?.message_understanding?.continuation_of_previous!==false) return review;
+  if(!hasDeterministicOldTopicReturnAnchor(conversation)) return review;
+
+  const issues=Array.isArray(review.issues)?review.issues:[];
+  const kept=issues.filter(issue=>{
+    const leaf=String(issue?.field||"").split(".").pop();
+    const value=String(issue?.value??"").toLowerCase();
+    const reason=String(issue?.reason||"");
+
+    // Candidate says false; Reviewer tries to force true because it notices an
+    // older topic. When a concrete older-turn lexical anchor is absent from the
+    // immediately previous user turn, this is an old-topic return, not direct
+    // continuation. Other Reviewer issues remain fully reviewable.
+    if(leaf==="continuation_of_previous" && value==="false" &&
+       /(應(?:該)?為\s*true|應標為\s*true|should\s+be\s+true|直接承接|延續.*話題|continuation.*true)/i.test(reason)) return false;
+    return true;
+  });
+
+  return kept.length ? {status:"RETRY",issues:kept} : {status:"PASS",issues:[]};
+}
+
 function acceptedPendingReminder(conversation){
   const lines=String(conversation||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
   let pending=null;
@@ -742,6 +800,7 @@ export default {
         if(needsSemanticReview(secondClean)){
           let secondReview=await reviewSemantic(env,conversation,secondClean); // API call #3
           secondReview=arbitrateReviewerWithHardGate(conversation,secondReview);
+          secondReview=arbitrateReviewerOldTopicReturn(conversation,secondClean,secondReview);
 
           if(secondReview.status==="RETRY"){
             return Response.json({
@@ -820,6 +879,7 @@ export default {
       // API call #2: fidelity reviewer. It can only PASS or request one RETRY.
       let firstReview=await reviewSemantic(env,conversation,firstClean);
       firstReview=arbitrateReviewerWithHardGate(conversation,firstReview);
+      firstReview=arbitrateReviewerOldTopicReturn(conversation,firstClean,firstReview);
 
       if(firstReview.status==="PASS"){
         return Response.json({
