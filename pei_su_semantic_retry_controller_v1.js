@@ -57,6 +57,7 @@ const SYSTEM = `
 23. 資訊缺失陳述不得改名繞過規則：對「你沒告訴我 X／X 你倒是沒說／我還不知道 X」這類句子，若沒有明確索取答案的語用證據，不只不得標成 request_*，也不得標成 indirect_request_*、implicit_request_*、hint_request_* 或任何等價的間接請求 act；response_or_action_expected 必須為 unknown，不得用 maybe 代替。
 24. 上述資訊缺失陳述的禁止範圍也包含裸標籤：implicit_request、indirect_request、request、hint_request 及任何語意等價標籤都不得使用；同時 implied_content 不得自行加入「使用者期待／希望／要求裴溯提供 X」之類未由原句明確支持的期待。若原句只有「你沒告訴我 X／X 你倒是沒說／我還不知道 X」而無真正索取答案的語用證據，應只保留資訊缺失本身，response_or_action_expected 維持 unknown。
 25. 資訊缺失陳述不得從文字欄位重新任務化：若原句只是「你沒告訴我 X／X 你倒是沒說／我還不知道 X」且沒有真正索取答案的語用證據，implied_content 與 uncertainties 都不得寫成「需補充 X」「需要／期待／希望裴溯提供 X」「存在未明確的請求」「是否需要裴溯提供 X」或任何等價說法。可以記錄的只有『X 尚未告知／目前未知』這個資訊狀態本身，不得推導成保密、故意隱瞞、承諾稍後告知或待辦。
+26. Turn scope 硬性規則：message_understanding 中 acts、continuation_of_previous、repairs_or_reframes_previous、implied_content、user_state_or_attitude、relationship_relevance、risk、response_or_action_expected、confidence、uncertainties，必須描述「最新一則使用者訊息」。較早訊息只可用來解析指代、時間線、承接關係與既有狀態，不得把較早 turn 的 request、repeat、態度、期待或其他 act 重新列入本輪。continuation_of_previous 只比較最新使用者訊息與其緊鄰的既有對話脈絡；例如最新句「牠趴在機車坐墊上」直接承接上一個橘貓話題時應為 true，即使更早還有書籍話題。
 `;
 
 const schema = {
@@ -235,6 +236,7 @@ const REVIEWER_SYSTEM = `
 8. risk 必須有原文風險訊號支持；一般煩躁、抱怨、疲累或資訊不足不能支持 low。無風險訊號而候選不是 none，RETRY。
 9. uncertainties 只能保留原文真實歧義，不能自行生成未表達的可能需求（例如安慰、支持、建議、陪伴）或回覆策略；若只是把 response_or_action_expected=unknown 換句話重複並額外擴張需求，也應 RETRY。
 10. confidence 只評估候選語意本身的可信度。不得因「不知道使用者是否要回覆／下一步要什麼」就降低整份 semantic 的 confidence；也不得用 high 掩蓋候選中其實沒有文本依據的推論。
+11. Turn scope：除 conversation_context 與 explicit_content 可保留必要歷史脈絡外，message_understanding 的 acts、continuation_of_previous、repairs_or_reframes_previous、implied_content、user_state_or_attitude、relationship_relevance、risk、response_or_action_expected、confidence、uncertainties 都必須評估最新一則使用者訊息。若 acts 出現只屬於較早 turn 的 request／repeat／observation 等，或用較早 turn 的情緒、期待、關係訊號污染本輪，必須 RETRY。歷史只用於理解最新 turn 的指代與承接，不得重新分類成最新 turn 的行為。
 
 額外語用核對：
 - 檢查 acts / current_topic / open_task / obligations 是否把普通陳述或分享升格成 request、task、求助或待解決問題；沒有明確文本證據就 RETRY。
@@ -296,7 +298,7 @@ async function reviewSemantic(env, conversation, semantic){
         instructions:REVIEWER_SYSTEM,
         input:
           "【原始對話（僅供上下文）】\n"+conversation.slice(-12000)+
-          "\n\n【重要審核範圍】response_or_action_expected 必須只依最新一則使用者訊息判定；不得使用較早的裴溯／assistant 問句作為期待證據。"+
+          "\n\n【重要審核範圍】message_understanding 的 turn-level 欄位（acts、continuation_of_previous、repairs_or_reframes_previous、implied_content、user_state_or_attitude、relationship_relevance、risk、response_or_action_expected、confidence、uncertainties）必須描述最新一則使用者訊息；較早訊息只可作為指代、時間線與承接脈絡，不得把歷史 act／態度／期待重新算成本輪。"+
           "\n\n【候選 semantic】\n"+JSON.stringify(semantic),
         text:{format:{
           type:"json_schema",
@@ -327,13 +329,23 @@ async function reviewSemantic(env, conversation, semantic){
 }
 
 
+function latestUserTurn(conversation){
+  const lines=String(conversation||"").split(/\r?\n/);
+  for(let i=lines.length-1;i>=0;i--){
+    const line=lines[i].trim();
+    const m=line.match(/^(?:使用者|user)\s*[：:]\s*(.*)$/i);
+    if(m) return m[1].trim();
+  }
+  return String(conversation||"").trim();
+}
+
 function controllerHardGate(conversation, semantic){
   const cc=semantic?.conversation_context||{};
   const mu=semantic?.message_understanding||{};
   const su=semantic?.state_updates||{};
 
-  const explicit=(mu.explicit_content||[]).join("\n");
-  const source=(explicit || conversation || "").toLowerCase();
+  // Hard-gate the latest user turn only. Earlier turns are context, not the current act.
+  const source=latestUserTurn(conversation).toLowerCase();
 
   // Detect an information-gap statement such as:
   // "你沒告訴我 X / X 你倒是沒說 / 我還不知道 X".
@@ -389,7 +401,8 @@ function controllerHardGate(conversation, semantic){
 function sanitizeMissingInformationSemantic(conversation, semantic){
   const x=JSON.parse(JSON.stringify(semantic||{}));
   const mu=x.message_understanding||{}, cc=x.conversation_context||{}, su=x.state_updates||{};
-  const source=((mu.explicit_content||[]).join("\n")||conversation||"").toLowerCase();
+  // Sanitize only when the latest user turn itself is an information-gap statement.
+  const source=latestUserTurn(conversation).toLowerCase();
   const gap=/(沒(?:有)?告訴我|還沒告訴我|你倒是沒(?:有)?說|倒是沒(?:有)?告訴我|我還不知道|尚未告訴|未告訴)/;
   if(!gap.test(source)) return x;
   const remainder=source.replace(/沒(?:有)?告訴我|還沒告訴我|倒是沒(?:有)?告訴我|你倒是沒(?:有)?說|我還不知道|尚未告訴|未告訴/g,"");
