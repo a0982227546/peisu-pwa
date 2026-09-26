@@ -389,6 +389,13 @@ function arbitrateReviewerWithHardGate(conversation, review){
     const requestInference=/(yes|maybe|expect|request|disclos|provide|告知|提供|期待|請求|明確要求|想知道|需要回覆|需要提供)/i.test(reason);
     if(requestBoundaryFields.has(leaf) && requestInference) return false;
 
+    // null means there is currently no open task; "none" means this turn
+    // does not create/update/resolve/cancel one. These are compatible states,
+    // not a fidelity conflict. Do not let the reviewer reject a sanitized
+    // missing-information statement solely for this representation difference.
+    if((field==="conversation_context.open_task" || field==="state_updates.open_task") &&
+       /(null|none|不一致|矛盾|校正)/i.test(reason)) return false;
+
     // Reviewer may not recreate an emotion solely because another candidate
     // field previously hallucinated that emotion. Require lexical evidence
     // from the latest user turn itself.
