@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#11161e"><title>裴溯</title>
+<style>
+:root{color-scheme:dark;--body:#090c11;--app:#11161e;--text:#eef1f5;--border:#2d3541;--pei:#222a35;--me:#3b475a;--meta:#778291;--input:#202731;--ib:#414b59;--button:#252d38}
+body.light{color-scheme:light;--body:#f3f3f3;--app:#fff;--text:#111;--border:#ddd;--pei:#fff;--me:#fff;--meta:#777;--input:#fff;--ib:#ccc;--button:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--body);color:var(--text);font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif}
+.app{max-width:640px;height:100dvh;margin:auto;display:flex;flex-direction:column;background:var(--app)}
+.head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}.head b{font-size:17px}
+.theme{background:var(--button);color:var(--text);border:1px solid var(--ib);border-radius:9px;padding:8px 10px;min-width:58px;font:inherit}
+.chat{flex:1;overflow:auto;padding:14px}
+.row{display:flex;width:100%;margin:10px 0}.row.pei{justify-content:flex-start}.row.me{justify-content:flex-end}
+.group{display:flex;flex-direction:column;min-width:0;max-width:min(64%,400px)}.pei .group{align-items:flex-start}.me .group{align-items:flex-end}
+.bubble{display:inline-block;width:auto;max-width:100%;box-sizing:border-box;padding:10px 11px;border-radius:18px;background:var(--pei);font-size:16px;line-height:1.42;text-align:left;white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;line-break:anywhere}
+.me .bubble{background:var(--me)}body.light .bubble{border:1px solid #ddd}
+.meta{font-size:10px;color:var(--meta);margin-top:4px}
+.status{min-height:22px;padding:3px 14px;color:var(--meta);font-size:12px}
+.input{display:flex;gap:8px;padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom));border-top:1px solid var(--border)}
+.input textarea{flex:1;min-height:52px;max-height:140px;resize:vertical;background:var(--input);color:var(--text);border:1px solid var(--ib);border-radius:11px;padding:10px;font:inherit}
+.send{background:var(--button);color:var(--text);border:1px solid var(--ib);border-radius:9px;padding:8px 10px;min-width:58px;font:inherit}.send:disabled{opacity:.45}
+
+/* UI integration only — locked v07 bubble rules above are untouched */
+.head-actions{display:flex;align-items:center;gap:3px}
+.theme{padding:3px 6px;min-width:38px;font-size:13px}
+.more{background:transparent;color:var(--text);border:0;padding:1px 4px;font:inherit;font-size:16px;line-height:1}
+.menu{position:fixed;z-index:30;min-width:150px;background:var(--app);border:1px solid var(--border);border-radius:12px;padding:5px;box-shadow:0 8px 24px #0006}
+.menu[hidden],.memory-view[hidden]{display:none}
+.menu button{display:block;width:100%;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;padding:10px 12px;border-radius:8px}
+.memory-view{position:fixed;inset:0;z-index:40;background:var(--app);color:var(--text);display:flex;flex-direction:column}
+.memory-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.memory-head button{border:0;background:transparent;color:var(--text);font:inherit;font-size:22px;padding:2px 6px}
+.memory-list{flex:1;overflow:auto;padding:14px}
+.memory-item{padding:10px 0;border-bottom:1px solid var(--border)}
+.memory-time{font-size:10px;color:var(--meta);margin-bottom:4px}
+.memory-empty{color:var(--meta);font-size:13px}
+.memory-remove{margin-top:8px;border:1px solid var(--ib);background:var(--button);color:var(--text);border-radius:8px;padding:6px 9px;font:inherit;font-size:12px}
+</style></head>
+<body><div class="app">
+<div class="head"><b>裴溯</b><div class="head-actions"><button class="theme" id="theme">白</button><button class="more" id="more" aria-label="更多">⋯</button></div></div>
+<div class="chat" id="chat"></div>
+<div class="status" id="status"></div>
+<div class="input"><textarea id="inp"></textarea><button class="send" id="send">送出</button></div>
+</div>
+<div class="menu" id="topMenu" hidden><button id="openMemory">長期記憶</button></div>
+<div class="menu" id="msgMenu" hidden><button id="copyMsg">複製</button><button id="toggleMemory">加入長期記憶</button></div>
+
+<div class="memory-view" id="memoryView" hidden><div class="memory-head"><button id="closeMemory">‹</button><b>長期記憶</b></div><div class="memory-list" id="memoryList"></div></div>
+<script>
+const WORKER_URL="https://peisu-integrated-reply-voice-test-v02.a0982227546.workers.dev";
+const chat=document.getElementById("chat"),inp=document.getElementById("inp"),sendBtn=document.getElementById("send"),statusEl=document.getElementById("status"),theme=document.getElementById("theme");
+const history=[];let busy=false;
+function tm(){return new Date().toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit",hour12:false})}
+function add(who,text){
+ const row=document.createElement("div");row.className="row "+(who==="裴溯"?"pei":"me");
+ const group=document.createElement("div");group.className="group";
+ const bubble=document.createElement("div");bubble.className="bubble";bubble.textContent=text;bubble.dataset.who=who;
+ const meta=document.createElement("div");meta.className="meta";meta.textContent=tm();
+ group.append(bubble,meta);row.append(group);chat.append(row);chat.scrollTop=chat.scrollHeight;
+}
+function transcript(){return history.map(x=>`${x.who}：${x.text}`).join("\n")}
+async function send(){
+ const raw=inp.value.trim();if(!raw||busy)return;
+ busy=true;sendBtn.disabled=true;inp.value="";
+ history.push({who:"使用者",text:raw});add("使用者",raw);statusEl.textContent="裴溯正在回覆…";
+ try{
+  const r=await fetch(WORKER_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({conversation:transcript()})});
+  const data=await r.json();
+  if(!r.ok)throw new Error(data?.error||`HTTP ${r.status}`);
+  const reply=data?.integrated_reply?.reply;
+  if(!reply)throw new Error("找不到回覆內容");
+  if(reply.mode!=="silent"&&typeof reply.text==="string"&&reply.text.trim()){
+   const t=reply.text.trim();history.push({who:"裴溯",text:t});add("裴溯",t);
+  }
+  statusEl.textContent="";
+ }catch(e){statusEl.textContent="連線失敗："+(e?.message||e)}
+ busy=false;sendBtn.disabled=false;
+}
+sendBtn.onclick=send;
+theme.onclick=()=>{
+ const light=document.body.classList.toggle("light");
+ theme.textContent=light?"黑":"白";
+ document.querySelector('meta[name="theme-color"]').setAttribute("content",light?"#fff":"#11161e");
+};
+
+// Persistent-memory UI test v1.0.
+// Uses only the already-deployed Reply Worker memory API: add / list / remove.
+// Semantic / Scene / normal Reply generation above are untouched.
+const more=document.getElementById("more");
+const topMenu=document.getElementById("topMenu");
+const openMemory=document.getElementById("openMemory");
+const msgMenu=document.getElementById("msgMenu");
+const copyMsg=document.getElementById("copyMsg");
+const toggleMemory=document.getElementById("toggleMemory");
+const memoryView=document.getElementById("memoryView");
+const closeMemory=document.getElementById("closeMemory");
+const memoryList=document.getElementById("memoryList");
+
+let selectedBubble=null;
+let memoryItems=[];
+
+function hideMenus(){topMenu.hidden=true;msgMenu.hidden=true}
+function placeMenu(m,x,y){
+ m.hidden=false;
+ const r=m.getBoundingClientRect();
+ m.style.left=Math.max(8,Math.min(x,innerWidth-r.width-8))+"px";
+ m.style.top=Math.max(8,Math.min(y,innerHeight-r.height-8))+"px";
+}
+function sameMemory(b,m){
+ return m && m.text===b.textContent && (!m.speaker || m.speaker===(b.dataset.who||""));
+}
+function memoryForBubble(b){return memoryItems.find(m=>sameMemory(b,m))||null}
+
+async function memoryRequest(payload){
+ const r=await fetch(WORKER_URL,{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify(payload)
+ });
+ const raw=await r.text();
+ let data;try{data=JSON.parse(raw)}catch{throw new Error("回傳格式錯誤")}
+ if(!r.ok||data?.status!=="completed")throw new Error(data?.error||("HTTP "+r.status));
+ return data;
+}
+async function loadMemories(){
+ const data=await memoryRequest({memory_action:"list"});
+ memoryItems=Array.isArray(data.memories)?data.memories:[];
+ return memoryItems;
+}
+function fmtMemoryTime(iso){
+ const d=new Date(iso);
+ return Number.isNaN(d.getTime()) ? String(iso||"") :
+   d.toLocaleString("zh-TW",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});
+}
+async function removeMemory(item){
+ if(!item?.id)return;
+ await memoryRequest({memory_action:"remove",id:item.id});
+ memoryItems=memoryItems.filter(x=>x.id!==item.id);
+}
+async function renderMemory(){
+ memoryList.innerHTML="";
+ try{
+   await loadMemories();
+   if(!memoryItems.length){
+     const d=document.createElement("div");d.className="memory-empty";
+     d.textContent="還沒有加入長期記憶的訊息。";memoryList.append(d);return;
+   }
+   for(const item of memoryItems){
+     const d=document.createElement("div");d.className="memory-item";
+     const t=document.createElement("div");t.className="memory-time";
+     t.textContent=fmtMemoryTime(item.created_at)+(item.speaker?" · "+item.speaker:"");
+     const b=document.createElement("div");b.textContent=item.text;
+     const rm=document.createElement("button");rm.className="memory-remove";rm.textContent="取消長期記憶";
+     rm.onclick=async()=>{
+       rm.disabled=true;rm.textContent="取消中…";
+       try{
+         await removeMemory(item);
+         statusEl.textContent="已取消長期記憶";
+         await renderMemory();
+       }catch(e){
+         statusEl.textContent="取消長期記憶失敗："+(e?.message||String(e));
+         rm.disabled=false;rm.textContent="取消長期記憶";
+       }
+     };
+     d.append(t,b,rm);memoryList.append(d);
+   }
+ }catch(e){
+   const d=document.createElement("div");d.className="memory-empty";
+   d.textContent="長期記憶讀取失敗："+(e?.message||String(e));memoryList.append(d);
+ }
+}
+
+async function openMsg(b,x,y){
+ selectedBubble=b;
+ try{await loadMemories()}catch(e){}
+ toggleMemory.textContent=memoryForBubble(b)?"取消長期記憶":"加入長期記憶";
+ toggleMemory.disabled=false;
+ topMenu.hidden=true;
+ placeMenu(msgMenu,x,y);
+}
+let pt=null,sx=0,sy=0;
+chat.addEventListener("pointerdown",e=>{
+ const b=e.target.closest(".bubble");if(!b)return;
+ sx=e.clientX;sy=e.clientY;
+ pt=setTimeout(()=>{pt=null;openMsg(b,sx,sy)},520);
+});
+chat.addEventListener("pointermove",e=>{
+ if(pt&&(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10)){clearTimeout(pt);pt=null}
+});
+["pointerup","pointercancel"].forEach(n=>chat.addEventListener(n,()=>{if(pt)clearTimeout(pt);pt=null}));
+
+copyMsg.onclick=async()=>{
+ if(!selectedBubble)return;
+ try{await navigator.clipboard.writeText(selectedBubble.textContent)}catch(e){}
+ hideMenus();
+};
+toggleMemory.onclick=async()=>{
+ if(!selectedBubble||toggleMemory.disabled)return;
+ const bubble=selectedBubble;
+ toggleMemory.disabled=true;
+ const existing=memoryForBubble(bubble);
+ toggleMemory.textContent=existing?"取消中…":"加入中…";
+ try{
+   if(existing){
+     await removeMemory(existing);
+     statusEl.textContent="已取消長期記憶";
+   }else{
+     const data=await memoryRequest({
+       memory_action:"add",
+       text:bubble.textContent,
+       speaker:bubble.dataset.who||""
+     });
+     if(!data?.memory?.id)throw new Error("找不到新增的記憶 ID");
+     memoryItems.push(data.memory);
+     memoryItems.sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+     statusEl.textContent="已加入長期記憶";
+   }
+   hideMenus();
+ }catch(e){
+   statusEl.textContent=(existing?"取消":"加入")+"長期記憶失敗："+(e?.message||String(e));
+   toggleMemory.disabled=false;
+   toggleMemory.textContent=existing?"取消長期記憶":"加入長期記憶";
+ }
+};
+
+more.onclick=e=>{
+ e.stopPropagation();msgMenu.hidden=true;
+ if(topMenu.hidden){
+   const r=more.getBoundingClientRect();
+   placeMenu(topMenu,Math.max(8,r.right-150),r.bottom+6);
+ }else topMenu.hidden=true;
+};
+openMemory.onclick=async()=>{
+ hideMenus();memoryView.hidden=false;await renderMemory();
+};
+closeMemory.onclick=()=>{memoryView.hidden=true};
+document.addEventListener("click",e=>{
+ if(!e.target.closest(".menu")&&!e.target.closest("#more"))hideMenus();
+});
+</script></body></html>
