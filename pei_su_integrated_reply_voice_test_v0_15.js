@@ -26,17 +26,6 @@ const SYSTEM = `你是電視劇《光淵》版本的裴溯。這是一個獨立�
 - 不要把自然短句延伸成客服式指令，例如「要我介入就明確說」「你要我安靜還是說實話」。
 - 避免機械重複「好。」「嗯。」「行，知道了。」「要做什麼？」「然後呢？」；不是禁詞，只有當下真的自然時才使用。
 
-【不要把自己拋出的話題鉤子變成待辦】
-- 裴溯自己提出的問題、玩笑、交換條件、懸念或話題鉤子，如果使用者沒有接住，不得僅因「尚未回答」就視為仍待完成、必須追回的事項。
-- 當使用者明確切換到新話題，之後又繼續補充新話題時，優先跟隨使用者目前正在說的內容；不要用「回到正題」「先回答上一題」「還是不值……」「等你回答再說」等方式把自己的舊鉤子強行拉回來。
-- 「先前問過」只代表那句話曾經發生，不等於使用者欠一個答案，也不等於 open task / obligation。scene_action 或原始對話保留那句舊問題時，也不得因此自行把它升格成待辦。
-- 只有兩種情況可以自然回到舊鉤子：使用者自己重新提起；或已驗證資料明確建立了真正仍未完成的 request / obligation / 必須處理的事項。
-- 這不是禁止自然追問。同一話題仍在延續時，可以依當下語境追問；限制的是使用者已經轉向並持續新話題後，仍反覆追回角色自己創造的舊問題。
-
-【不要把陳述當成確認題回答】
-- 使用者若是在陳述／建立一個已知事實，而不是詢問「有沒有／是不是／對不對」或要求確認，不要機械地把同一事實用「有／買了／是／對」重新回答一遍，像在回答一個不存在的確認問題。
-- 優先對該陳述中真正值得承接的部分自然反應；必要時可省略已知前提。這不是禁止自然確認；同一事實若在當下語境確實需要確認，仍可簡短確認。
-
 【內部判斷不得洩漏】
 - 你可以在內部判斷語氣、關係、情緒、界線、對話策略，但最終 text 只能是裴溯此刻真的會說出口的話。
 - text 絕對不能分析使用者說法、評論其溝通方式、提供改寫建議、解釋「這句話會讓人怎麼聽」、列出可選回法，或出現「可以改成」「下次把……換成……」等教學內容。
@@ -138,12 +127,71 @@ function buildReplyProvenance(semantic,scene){
   };
 }
 
+
+
+// --- User-controlled long-term memory (KV) ---
+// This layer never decides what deserves to be remembered. It only stores,
+// lists, or removes entries explicitly requested by the UI/user.
+const MEMORY_PREFIX = "memory:";
+
+function memoryKey(createdAt, id){
+  return `${MEMORY_PREFIX}${createdAt}:${id}`;
+}
+
+async function listLongTermMemories(env){
+  if(!env.LONG_TERM_MEMORY) return [];
+  const rows=[];
+  let cursor;
+  do{
+    const page=await env.LONG_TERM_MEMORY.list({prefix:MEMORY_PREFIX,cursor});
+    for(const k of page.keys||[]){
+      const value=await env.LONG_TERM_MEMORY.get(k.name,{type:"json"});
+      if(value && typeof value.text==="string") rows.push(value);
+    }
+    cursor=page.list_complete ? undefined : page.cursor;
+  }while(cursor);
+  rows.sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  return rows;
+}
+
+async function handleMemoryRequest(body,env){
+  const action=body?.memory_action;
+  if(!action) return null;
+  if(!env.LONG_TERM_MEMORY) return json({error:"LONG_TERM_MEMORY binding missing"},500);
+  if(action==="list"){
+    return json({status:"completed",memories:await listLongTermMemories(env)});
+  }
+  if(action==="add"){
+    const text=typeof body?.text==="string" ? body.text.trim() : "";
+    if(!text) return json({error:"memory text must be non-empty"},400);
+    const created_at=new Date().toISOString();
+    const id=crypto.randomUUID();
+    const entry={id,text,created_at};
+    if(typeof body?.speaker==="string" && body.speaker.trim()) entry.speaker=body.speaker.trim();
+    await env.LONG_TERM_MEMORY.put(memoryKey(created_at,id),JSON.stringify(entry));
+    return json({status:"completed",memory:entry});
+  }
+  if(action==="remove"){
+    const id=typeof body?.id==="string" ? body.id : "";
+    if(!id) return json({error:"memory id required"},400);
+    const page=await env.LONG_TERM_MEMORY.list({prefix:MEMORY_PREFIX});
+    const hit=(page.keys||[]).find(k=>k.name.endsWith(`:${id}`));
+    if(!hit) return json({error:"memory not found"},404);
+    await env.LONG_TERM_MEMORY.delete(hit.name);
+    return json({status:"completed",removed_id:id});
+  }
+  return null;
+}
+
 export default {
  async fetch(req,env){
   if(req.method==="OPTIONS") return new Response(null,{headers:CORS});
   if(req.method!=="POST") return json({error:"POST only"},405);
   try{
-    const body=await req.json(); const conversation=body?.conversation;
+    const body=await req.json();
+    const memoryResponse=await handleMemoryRequest(body,env);
+    if(memoryResponse) return memoryResponse;
+    const conversation=body?.conversation;
     if(!conversation || typeof conversation!=="string") return json({error:"conversation must be a non-empty string"},400);
     const payload=JSON.stringify({conversation});
     const [sr,cr]=await Promise.all([
@@ -156,7 +204,11 @@ export default {
     const replySemantic=compactSemantic(semantic);
     const replyScene=compactScene(scene);
     const replyProvenance=buildReplyProvenance(semantic,scene);
-    const input=`原始對話：\n${conversation}\n\nreply_provenance（生成前事實來源契約）：\n${JSON.stringify(replyProvenance,null,2)}\n\n以上資料是事實來源與邊界，不是待辦清單。先守住來源，再依裴溯本人在此刻是否自然會有反應來決定。`;
+    const longTermMemories=await listLongTermMemories(env);
+    const memoryBlock=longTermMemories.length
+      ? `\n\n使用者明確保存的長期記憶（依時間排序；視為已建立的持久事實／對話紀錄，不得自行新增、刪改或推翻）：\n${JSON.stringify(longTermMemories,null,2)}`
+      : "";
+    const input=`原始對話：\n${conversation}${memoryBlock}\n\nreply_provenance（生成前事實來源契約）：\n${JSON.stringify(replyProvenance,null,2)}\n\n以上資料是事實來源與邊界，不是待辦清單。先守住來源，再依裴溯本人在此刻是否自然會有反應來決定。`;
     const rr=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Authorization":`Bearer ${env.OPENAI_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({model:env.PEISU_REPLY_MODEL||"gpt-5",input:[{role:"system",content:[{type:"input_text",text:SYSTEM}]},{role:"user",content:[{type:"input_text",text:input}]}],text:{format:{type:"json_schema",name:"pei_su_voice_reply_v015",strict:true,schema}}})});
     const raw=await rr.json(); if(!rr.ok) return json({error:"reply model failed",detail:raw},502);
     let reply; try{reply=JSON.parse(textFromResponse(raw));}catch(e){return json({error:"reply JSON parse failed",raw:textFromResponse(raw)},502)}
