@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>裴溯 Push v01</title>
+<style>
+body{margin:0;background:#11161e;color:#f4f6f8;font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif}
+main{max-width:560px;margin:auto;padding:28px 20px}
+h1{font-size:24px;margin:0 0 8px}.sub{color:#9aa4b2;line-height:1.6}
+.card{margin-top:28px;border:1px solid #394352;border-radius:18px;padding:20px;background:#171e28}
+button{width:100%;padding:16px;border:0;border-radius:14px;font-size:18px;font-weight:700;background:#eef2f6;color:#11161e}
+#status{margin-top:18px;line-height:1.7;color:#cbd3dc}
+.small{font-size:14px;color:#8893a1;margin-top:20px;line-height:1.6}
+</style>
+</head>
+<body>
+<main>
+<h1>Push v01｜通知管線測試</h1>
+<div class="sub">只測手機能不能顯示「裴溯」通知，不接 AI、不碰聊天室。</div>
+<div class="card">
+<button id="test">10 秒後測試通知</button>
+<div id="status">尚未開始。</div>
+</div>
+<div class="small">按下後如果手機詢問通知權限，請選允許；看到「可以回桌面了」後立刻按 Home 回桌面，等約 10 秒。</div>
+</main>
+<script>
+const statusEl=document.getElementById('status');
+const btn=document.getElementById('test');
+
+async function getRegistration(){
+  if(!('serviceWorker' in navigator)) throw new Error('這個瀏覽器不支援 Service Worker');
+  let reg=await navigator.serviceWorker.getRegistration('./');
+  if(!reg) reg=await navigator.serviceWorker.register('./sw.js');
+  await navigator.serviceWorker.ready;
+  return reg;
+}
+
+btn.addEventListener('click', async()=>{
+  btn.disabled=true;
+  try{
+    if(!('Notification' in window)) throw new Error('這個瀏覽器不支援通知');
+    let permission=Notification.permission;
+    if(permission!=='granted') permission=await Notification.requestPermission();
+    if(permission!=='granted') throw new Error('通知權限沒有允許');
+
+    const reg=await getRegistration();
+    statusEl.textContent='權限正常。可以回桌面了；約 10 秒後應該會收到通知。';
+
+    setTimeout(async()=>{
+      try{
+        await reg.showNotification('裴溯',{
+          body:'還在？',
+          icon:'./icon-192.png',
+          badge:'./icon-192.png',
+          tag:'peisu-push-local-v01',
+          renotify:true
+        });
+        statusEl.textContent='測試通知已送出。';
+      }catch(e){
+        statusEl.textContent='送出通知失敗：'+e.message;
+      }
+    },10000);
+  }catch(e){
+    statusEl.textContent='測試失敗：'+e.message;
+    btn.disabled=false;
+  }
+});
+</script>
+</body>
+</html>
