@@ -18,3 +18,4 @@ npx wrangler deploy --config wrangler.peisu-push-v01.jsonc
 - VAPID_SUBJECT
 
 注意：VAPID_PRIVATE_KEY 絕對不要上傳 GitHub。
+部署觸發測試
