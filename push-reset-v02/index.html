@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Push v02｜重設測試訂閱</title>
+<style>
+body{margin:0;background:#0d1420;color:#f5f7fb;font-family:system-ui,-apple-system,sans-serif}
+main{max-width:680px;margin:auto;padding:34px}
+h1{font-size:28px;margin:0 0 18px}
+p{color:#b9c1cf;line-height:1.7}
+button{width:100%;margin-top:28px;padding:20px;border:0;border-radius:22px;font-size:20px;font-weight:700}
+#status{margin-top:28px;padding:20px;border-radius:20px;background:#17202d;white-space:pre-wrap;line-height:1.6}
+</style>
+</head>
+<body>
+<main>
+<h1>Push v02｜重設測試訂閱</h1>
+<p>只取消 <code>push-test-v02/</code> 這個測試範圍目前的 Push 訂閱；不刪聊天紀錄、不清網站資料，也不動正式版 PWA。</p>
+<button id="reset">取消舊 Push 訂閱</button>
+<div id="status">尚未執行。</div>
+</main>
+<script>
+const statusBox=document.getElementById('status');
+document.getElementById('reset').onclick=async()=>{
+  try{
+    statusBox.textContent='處理中…';
+    if(!('serviceWorker' in navigator)) throw new Error('此瀏覽器不支援 Service Worker');
+    const regs=await navigator.serviceWorker.getRegistrations();
+    const target=regs.find(r=>new URL(r.scope).pathname.endsWith('/peisu-pwa/push-test-v02/'));
+    if(!target){
+      statusBox.textContent='找不到 push-test-v02 的 Service Worker。沒有修改其他範圍。';
+      return;
+    }
+    const sub=await target.pushManager.getSubscription();
+    if(!sub){
+      statusBox.textContent='這個測試範圍目前沒有 Push 訂閱。\n可以回 v02 重新建立訂閱。';
+      return;
+    }
+    const ok=await sub.unsubscribe();
+    statusBox.textContent=ok
+      ? '舊 Push 訂閱已取消 ✅\n可以回 v02 用新公鑰重新建立訂閱。'
+      : '瀏覽器沒有確認取消成功，請先不要繼續測試。';
+  }catch(e){
+    statusBox.textContent='重設失敗 ❌\n'+(e?.message||String(e));
+  }
+};
+</script>
+</body>
+</html>
