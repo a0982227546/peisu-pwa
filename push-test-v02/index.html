@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>裴溯 Push v02｜真 Web Push 測試</title>
+  <style>
+    body{margin:0;background:#11161e;color:#f5f7fa;font-family:system-ui,-apple-system,sans-serif}
+    main{max-width:620px;margin:auto;padding:28px 18px}
+    h1{font-size:22px;margin:0 0 10px}.note{color:#aeb7c4;line-height:1.65}
+    button{width:100%;padding:15px;margin:9px 0;border:0;border-radius:14px;font-size:16px;font-weight:700}
+    #subscribe{background:#fff;color:#11161e} #send{background:#dce7ff;color:#11161e}
+    #send:disabled{opacity:.45}
+    pre{white-space:pre-wrap;word-break:break-word;background:#1a222d;padding:14px;border-radius:14px;min-height:90px;line-height:1.5}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Push v02｜真 Web Push 測試</h1>
+  <p class="note">這頁與正式裴溯 PWA 分開。先建立手機 Push 訂閱，再由 Cloudflare Worker 從伺服器端送一則測試通知。</p>
+  <button id="subscribe">① 建立 Push 訂閱</button>
+  <button id="send" disabled>② 從 Worker 發送測試 Push</button>
+  <pre id="log">尚未開始。</pre>
+</main>
+<script>
+const WORKER = "https://peisu-push-v01.a0982227546.workers.dev";
+const log = document.querySelector("#log");
+const sendBtn = document.querySelector("#send");
+let subscription = null;
+
+function say(s){ log.textContent = s; }
+function b64ToU8(s){
+  const pad = "=".repeat((4 - s.length % 4) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+document.querySelector("#subscribe").onclick = async () => {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      throw new Error("這個瀏覽器不支援 Web Push。");
+    }
+    say("正在取得 VAPID 公鑰…");
+    const keyRes = await fetch(WORKER + "/public-key");
+    const keyData = await keyRes.json();
+    if (!keyData.ok || !keyData.publicKey) throw new Error("Worker 沒有回傳公鑰。");
+
+    say("正在註冊獨立測試 Service Worker…");
+    const reg = await navigator.serviceWorker.register("./sw.js", {scope:"./"});
+    await navigator.serviceWorker.ready;
+
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("通知權限不是允許。");
+
+    say("正在建立 Push subscription…");
+    subscription = await reg.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: b64ToU8(keyData.publicKey)
+      });
+    }
+    sendBtn.disabled = false;
+    say("訂閱成功 ✅\n\n現在可以按「② 從 Worker 發送測試 Push」。");
+  } catch (e) {
+    say("失敗 ❌\n" + (e?.message || String(e)));
+  }
+};
+
+sendBtn.onclick = async () => {
+  try {
+    if (!subscription) throw new Error("尚未建立 subscription。");
+    say("正在請 Worker 發送真正的 Web Push…");
+    const res = await fetch(WORKER + "/send-test", {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({subscription: subscription.toJSON()})
+    });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || ("HTTP " + res.status));
+    say("Worker 回報已送出 ✅\n\n如果手機跳出「裴溯」通知，真 Web Push 就成功。");
+  } catch (e) {
+    say("發送失敗 ❌\n" + (e?.message || String(e)));
+  }
+};
+</script>
+</body>
+</html>
