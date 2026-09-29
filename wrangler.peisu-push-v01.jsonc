@@ -2,5 +2,10 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "peisu-push-v01",
   "main": "index.js",
-  "compatibility_date": "2026-09-28"
+  "compatibility_date": "2026-09-28",
+  "vars": {
+    "VAPID_PUBLIC_KEY": "BJJHdhN5ru0_tHdVgwx9YLxdtS61lqEaR32u9SjynMYj74ai738h6Q4MqOl2LA0EqxU27cl256OLsKPERpkedf4",
+    "VAPID_SUBJECT": "mailto:push@example.com"
+  },
+  "kv_namespaces": [{"binding":"KV","id":"067b9f40743742808bf5aa5bc004a2cd"}]
 }
