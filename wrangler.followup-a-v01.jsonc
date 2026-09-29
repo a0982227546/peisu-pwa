@@ -1,0 +1,11 @@
+{
+  "name": "peisu-followup-a-v01",
+  "main": "followup-a-v01.js",
+  "compatibility_date": "2026-09-29",
+  "services": [
+    {
+      "binding": "SEMANTIC",
+      "service": "peisu-semantic-v07"
+    }
+  ]
+}

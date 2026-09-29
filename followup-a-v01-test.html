@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-Hant"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>裴溯 A-v01｜情境追蹤判斷</title>
+<style>
+body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;max-width:720px;margin:auto;padding:20px;background:#f6f7f9;color:#202124}
+.card{background:#fff;border:1px solid #ddd;border-radius:14px;padding:16px}
+textarea,input,button,pre{width:100%;box-sizing:border-box;font:inherit}
+textarea,input{padding:12px;border:1px solid #bbb;border-radius:10px;margin:7px 0 12px}
+textarea{min-height:100px}button{padding:13px;border:0;border-radius:10px;background:#111;color:#fff;font-weight:700}
+pre{white-space:pre-wrap;word-break:break-word;background:#f3f4f6;padding:12px;border-radius:10px;min-height:120px}
+small{color:#666}
+</style></head><body>
+<h2>裴溯 A-v01｜情境追蹤判斷</h2>
+<div class="card">
+<small>獨立測試：只判斷「值不值得之後追」。不發 Push、不生成裴溯台詞、不修改正式聊天室。</small>
+<label><b>測試 Worker 網址</b></label>
+<input id="endpoint" placeholder="https://peisu-followup-a-v01....workers.dev">
+<label><b>最後一句話</b></label>
+<textarea id="msg"></textarea>
+<button id="run">判斷</button>
+<p id="status"></p><pre id="out">尚未測試</pre>
+</div>
+<script>
+const e=document.getElementById("endpoint"),m=document.getElementById("msg"),o=document.getElementById("out"),s=document.getElementById("status");
+document.getElementById("run").onclick=async()=>{
+ let u=e.value.trim(); if(u&&!/^https?:\/\//i.test(u))u="https://"+u;
+ if(!u||!m.value.trim()){s.textContent="請填 Worker 網址和測試句。";return}
+ s.textContent="判斷中…";o.textContent="";
+ try{
+  const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:m.value.trim()})});
+  const d=await r.json(); o.textContent=JSON.stringify(d,null,2);s.textContent=r.ok?"完成":"失敗 HTTP "+r.status;
+ }catch(err){s.textContent="連線失敗";o.textContent=String(err)}
+};
+</script></body></html>
