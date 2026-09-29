@@ -1,0 +1,7 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>裴溯 Push v04</title><style>body{font-family:system-ui;background:#11161e;color:#fff;padding:24px}main{max-width:560px;margin:auto}button{font-size:18px;padding:14px;border:0;border-radius:12px}#s{white-space:pre-wrap;line-height:1.6;margin-top:18px}</style>
+<main><h1>Push v04｜5 分鐘延遲測試</h1><p>按一次後即可關頁。</p><button id="b">安排 5 分鐘後通知</button><div id="s"></div></main>
+<script>
+const W="https://peisu-push-v01.a0982227546.workers.dev",s=document.querySelector("#s"),b=document.querySelector("#b");
+b.onclick=async()=>{b.disabled=true;s.textContent="正在安排…";try{const r=await fetch(W+"/schedule-v04-test",{method:"POST"}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||("HTTP "+r.status));s.textContent="已安排 ✅\n預定時間："+new Date(d.dueAt).toLocaleString()+"\n\n現在可以把這頁關掉。"}catch(e){s.textContent="安排失敗 ❌\n"+e.message;b.disabled=false}}
+</script></html>
