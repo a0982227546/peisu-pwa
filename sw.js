@@ -42,3 +42,59 @@ self.addEventListener("fetch", event => {
     )
   );
 });
+
+// Proactive Push → chat-history arrival gate.
+// Existing cache/offline handlers above are unchanged.
+const PROACTIVE_PUSH_API = "https://peisu-push-b-v01.a0982227546.workers.dev";
+
+self.addEventListener("push", event => {
+  event.waitUntil((async () => {
+    let data = {};
+    try {
+      data = event.data ? event.data.json() : {};
+    } catch {
+      data = { body: event.data ? event.data.text() : "" };
+    }
+
+    const id = String(data.id || "");
+    const title = data.title || "裴溯";
+    const body = data.body || "";
+
+    // Unlock chat visibility only after this device actually receives the Push.
+    if (id) {
+      try {
+        await fetch(PROACTIVE_PUSH_API + "/mark-arrived", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id })
+        });
+      } catch (e) {
+        // Notification still appears even if the acknowledgement temporarily fails.
+      }
+    }
+
+    await self.registration.showNotification(title, {
+      body,
+      icon: data.icon || "./icon-192.png",
+      badge: data.badge || "./icon-192.png",
+      tag: id || "peisu-proactive-push",
+      data: { url: data.url || "./", id }
+    });
+  })());
+});
+
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  const target = event.notification.data?.url || "./";
+  event.waitUntil((async () => {
+    const list = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of list) {
+      if ("focus" in client && client.url.startsWith(self.location.origin)) {
+        await client.focus();
+        if ("navigate" in client) await client.navigate(target);
+        return;
+      }
+    }
+    if (clients.openWindow) await clients.openWindow(target);
+  })());
+});
