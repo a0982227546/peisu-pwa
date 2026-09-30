@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#11161e">
-<meta name="application-name" content="裴總休息中">
+<meta name="application-name" content="裴溯">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="裴總休息中">
+<meta name="apple-mobile-web-app-title" content="裴溯">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>裴總休息中</title>
+<title>裴溯</title>
 <style>
 :root{color-scheme:dark;--body:#090c11;--app:#11161e;--text:#eef1f5;--border:#2d3541;--pei:#222a35;--me:#3b475a;--meta:#778291;--input:#202731;--ib:#414b59;--button:#252d38}
 body.light{color-scheme:light;--body:#f3f3f3;--app:#fff;--text:#111;--border:#ddd;--pei:#fff;--me:#fff;--meta:#777;--input:#fff;--ib:#ccc;--button:#fff}
@@ -82,6 +82,61 @@ const contextDebug=document.getElementById("contextDebug");
 // Full chat history persistence test v0.1 — local device storage only.
 // v05 changes only which already-stored chat range is sent as conversation. Reply Worker / Semantic / Scene / long-term-memory code is untouched.
 const CHAT_STORAGE_KEY="peisu_full_chat_history_v01"; // keep v01 key so the already-PASS history remains available
+// Proactive Push → existing chat history. Reads only messages already unlocked
+// by the device Service Worker after actual Push arrival.
+const PUSH_HISTORY_SYNC_URL="https://peisu-push-b-v01.a0982227546.workers.dev";
+const PUSH_HISTORY_SEEN_KEY="peisu_push_history_seen_v01";
+
+function loadSeenPushIds(){
+ try{
+  const a=JSON.parse(localStorage.getItem(PUSH_HISTORY_SEEN_KEY)||"[]");
+  return new Set(Array.isArray(a)?a:[]);
+ }catch(e){return new Set()}
+}
+function saveSeenPushIds(ids){
+ try{localStorage.setItem(PUSH_HISTORY_SEEN_KEY,JSON.stringify([...ids]))}catch(e){}
+}
+function pushLocalParts(sentAt){
+ const d=new Date(sentAt);
+ if(Number.isNaN(d.getTime()))return{date:localDateKey(),time:tm()};
+ return{
+  date:localDateKey(d),
+  time:d.toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit",hour12:false})
+ };
+}
+async function syncProactivePushHistory(){
+ try{
+  const r=await fetch(PUSH_HISTORY_SYNC_URL+"/arrived-messages",{cache:"no-store"});
+  const data=await r.json();
+  if(!r.ok)throw new Error(data?.error||`HTTP ${r.status}`);
+  const items=Array.isArray(data?.messages)?data.messages:[];
+  if(!items.length)return;
+
+  const seen=loadSeenPushIds();
+  let changed=false;
+  for(const m of items){
+   const id=String(m?.id||"");
+   const text=typeof m?.body==="string"?m.body.trim():"";
+   if(!id||!text||seen.has(id))continue;
+
+   const alreadyInHistory=history.some(x=>x&&x.pushMessageId===id);
+   if(!alreadyInHistory){
+    const p=pushLocalParts(m.sentAt);
+    history.push({who:"裴溯",text,time:p.time,date:p.date,pushMessageId:id});
+    changed=true;
+   }
+   seen.add(id);
+  }
+  saveSeenPushIds(seen);
+  if(changed){
+   // Intentionally do NOT sort the full history. Preserve the existing order.
+   saveChatHistory();
+   renderSavedChat();
+  }
+ }catch(e){
+  console.warn("Push history sync failed:",e);
+ }
+}
 let history=[];let busy=false;
 function loadChatHistory(){
  try{
@@ -228,6 +283,14 @@ async function send(){
 loadChatHistory();
 if(history.some(x=>x.dateTest)){history=history.filter(x=>!x.dateTest);saveChatHistory();}
 renderSavedChat();
+
+// Sync on normal open and whenever the installed PWA returns to the foreground.
+syncProactivePushHistory();
+window.addEventListener("pageshow",()=>syncProactivePushHistory());
+document.addEventListener("visibilitychange",()=>{
+ if(document.visibilityState==="visible")syncProactivePushHistory();
+});
+window.addEventListener("focus",()=>syncProactivePushHistory());
 
 sendBtn.onclick=send;
 theme.onclick=()=>{
