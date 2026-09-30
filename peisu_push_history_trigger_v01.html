@@ -1,0 +1,12 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Push→聊天紀錄測試 v01</title>
+<style>body{margin:0;background:#101722;color:#fff;font-family:system-ui}main{padding:28px;max-width:680px;margin:auto}button{width:100%;padding:18px;border:0;border-radius:18px;font-size:18px;font-weight:700;margin:8px 0}#s{margin-top:18px;padding:16px;background:#192331;border-radius:16px;white-space:pre-wrap;line-height:1.6}p{color:#c0c7d2;line-height:1.7}</style></head><body><main>
+<h1>Push→聊天紀錄測試 v01</h1>
+<p>這頁只呼叫獨立測試 Worker，不修改正式 B 的 3 天靜默／30%／pending／lastPushDate。</p>
+<button id="send">發送「師兄？」測試</button>
+<button id="clear">清空測試收件匣</button>
+<div id="s">尚未測試。</div>
+<script>
+const W="https://peisu-push-history-test-v01.a0982227546.workers.dev",S=document.getElementById("s");
+document.getElementById("send").onclick=async()=>{try{S.textContent="發送中…";const r=await fetch(W+"/send-history-test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({body:"師兄？"})});const d=await r.json();if(!r.ok||!d.sent)throw Error(d.error||"發送失敗");S.textContent="Push 已送出，而且測試訊息已寫入收件匣 ✅\n現在不要點通知也可以，直接開測試聊天室。";}catch(e){S.textContent="失敗 ❌\n"+e.message}};
+document.getElementById("clear").onclick=async()=>{try{const r=await fetch(W+"/clear-test-inbox",{method:"POST"});const d=await r.json();if(!r.ok)throw Error(d.error||"清除失敗");S.textContent="測試收件匣已清空。";}catch(e){S.textContent="失敗 ❌\n"+e.message}};
+</script></main></body></html>
