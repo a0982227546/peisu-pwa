@@ -55,13 +55,22 @@ export default {
       const id = `push-arrival-test-${Date.now()}-${crypto.randomUUID()}`;
       const sentAt = new Date().toISOString();
       const msg = {id, body, sentAt, arrivedAt:null};
+
+      // IMPORTANT:
+      // Persist the pending message BEFORE sending the Push.
+      // The device can receive the Push immediately; its Service Worker may call
+      // /mark-arrived before sendPush() returns. Saving first prevents that race.
+      const inbox = await loadInbox(env);
+      inbox.push(msg);
+      await saveInbox(env, inbox);
+
       try {
         await sendPush(env, JSON.parse(saved), msg);
-        const inbox = await loadInbox(env);
-        inbox.push(msg);
-        await saveInbox(env, inbox);
         return json({ok:true,id,body,sentAt});
       } catch(e){
+        // Push did not send: remove only this unsent test message.
+        const rollback = (await loadInbox(env)).filter(x => x && x.id !== id);
+        await saveInbox(env, rollback);
         return json({ok:false,error:String(e?.message||e)},500);
       }
     }
