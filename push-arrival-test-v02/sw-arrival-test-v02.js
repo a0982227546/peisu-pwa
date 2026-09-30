@@ -1,4 +1,4 @@
-const ARRIVAL_API = "https://peisu-push-history-test-v01.a0982227546.workers.dev";
+const ARRIVAL_API = "https://peisu-push-history-arrival-test-v02.a0982227546.workers.dev";
 
 self.addEventListener("push", event => {
   event.waitUntil((async()=>{

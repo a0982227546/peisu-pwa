@@ -84,7 +84,7 @@ const contextDebug=document.getElementById("contextDebug");
 const CHAT_STORAGE_KEY="peisu_full_chat_history_v01";
 // Push→chat history arrival-gated candidate v03.
 // Does not change Semantic / Scene / Reply or the existing chat-history key.
-const PUSH_HISTORY_SYNC_URL="https://peisu-push-history-test-v01.a0982227546.workers.dev";
+const PUSH_HISTORY_SYNC_URL="https://peisu-push-history-arrival-test-v02.a0982227546.workers.dev";
 const PUSH_HISTORY_SEEN_KEY="peisu_push_history_seen_v01";
 
 function loadSeenPushIds(){
@@ -529,14 +529,6 @@ closeMemory.onclick=()=>{memoryView.hidden=true};
 document.addEventListener("click",e=>{
  if(!e.target.closest(".menu")&&!e.target.closest("#more"))hideMenus();
 });
-</script>
-<script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js", {scope:"./"})
-      .catch(err => console.warn("PWA service worker registration failed:", err));
-  });
-}
 </script>
 
 </body></html>
